@@ -177,6 +177,15 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
 
 /** Run Gmsh on a STEP file and return the cleaned mesh. */
 export async function meshStep(options: MeshOptions): Promise<MeshResult> {
+  // The path is interpolated into a .geo script, and Gmsh's .geo language
+  // has a System command that executes shell commands — a quote in the path
+  // would be a command injection vector, not a file-name quirk.
+  if (/["\\\r\n]/.test(options.stepPath)) {
+    throw new MeshingError(
+      `STEP path contains characters that cannot be embedded safely in a ` +
+        `.geo script (quote, backslash or newline): ${options.stepPath}`,
+    );
+  }
   try {
     await Deno.stat(options.stepPath);
   } catch {

@@ -209,3 +209,17 @@ Deno.test("parseDat - a .dat without results is a SolveError, not silence", () =
   }
   assertEquals(thrown instanceof SolveError, true);
 });
+
+Deno.test("meshStep - a STEP path that could escape the .geo string is rejected", async () => {
+  // Gmsh's .geo language has a System command executing shell commands —
+  // a quote in the path is an injection vector, not a file-name quirk.
+  await assertRejects(
+    async () =>
+      await getHandler("calculix_solve_static")({
+        ...structuredClone(BRACKET_CASE),
+        step_path: `/tmp/x"; System "id"; //.step`,
+      }),
+    MeshingError,
+    "cannot be embedded safely",
+  );
+});

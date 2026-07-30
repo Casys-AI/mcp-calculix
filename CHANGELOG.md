@@ -21,3 +21,10 @@ Initial release.
 ### Scope
 
 Linear static, fully fixed supports, nodal loads. No pressure/thermal/modal/contact yet. Units fixed: mm, N, MPa.
+
+## [0.1.1] - 2026-07-30
+
+### Security
+
+- **.geo command injection via the STEP path.** Gmsh's .geo language has a `System` command that executes shell commands, and the STEP path was interpolated into `Merge "…"` unescaped — a quote in the path was an injection vector. Paths containing quotes, backslashes or newlines are now rejected before any subprocess runs.
+- **HTTP mode binds to loopback by default.** These tools execute code; `--hostname=0.0.0.0` is now an explicit choice, not the default.
