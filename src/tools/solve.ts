@@ -16,6 +16,13 @@
 import type { CalculixTool } from "./types.ts";
 import { type FaceSelection, meshStep } from "../api/gmsh.ts";
 import { buildDeck, type NodalLoad, solveDeck } from "../api/ccx.ts";
+import {
+  STATIC_SOLVE_KIND,
+  STATIC_SOLVE_OUTPUT_SCHEMA,
+  STATIC_SOLVE_SCHEMA_VERSION,
+} from "../results.ts";
+
+export const CALCULIX_RESULTS_VIEWER_URI = "ui://mcp-calculix/results-viewer";
 
 export const solveTools: CalculixTool[] = [
   {
@@ -31,6 +38,14 @@ export const solveTools: CalculixTool[] = [
       "from a name. Requires gmsh and ccx on PATH (apt install gmsh " +
       "calculix-ccx). Units: mm, N, MPa.",
     category: "solve",
+    outputSchema: STATIC_SOLVE_OUTPUT_SCHEMA,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    _meta: { ui: { resourceUri: CALCULIX_RESULTS_VIEWER_URI } },
     inputSchema: {
       type: "object",
       properties: {
@@ -56,12 +71,17 @@ export const solveTools: CalculixTool[] = [
           properties: {
             e_mpa: {
               type: "number",
-              description: "Young's modulus in MPa (Al 6061: 70000, steel: 210000)",
+              description:
+                "Young's modulus in MPa (Al 6061: 70000, steel: 210000)",
             },
-            nu: { type: "number", description: "Poisson's ratio (Al: 0.33, steel: 0.30)" },
+            nu: {
+              type: "number",
+              description: "Poisson's ratio (Al: 0.33, steel: 0.30)",
+            },
           },
           required: ["e_mpa", "nu"],
-          description: "Material constants — explicit values, never a material name",
+          description:
+            "Material constants — explicit values, never a material name",
         },
         selections: {
           type: "array",
@@ -71,16 +91,28 @@ export const solveTools: CalculixTool[] = [
             properties: {
               name: {
                 type: "string",
-                description: "Set name (letters/digits/underscore, becomes an NSET)",
+                description:
+                  "Set name (letters/digits/underscore, becomes an NSET)",
               },
               box: {
                 type: "object",
                 properties: {
-                  min: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
-                  max: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+                  min: {
+                    type: "array",
+                    items: { type: "number" },
+                    minItems: 3,
+                    maxItems: 3,
+                  },
+                  max: {
+                    type: "array",
+                    items: { type: "number" },
+                    minItems: 3,
+                    maxItems: 3,
+                  },
                 },
                 required: ["min", "max"],
-                description: "Axis-aligned box in mm enclosing the target surfaces",
+                description:
+                  "Axis-aligned box in mm enclosing the target surfaces",
               },
             },
             required: ["name", "box"],
@@ -91,7 +123,8 @@ export const solveTools: CalculixTool[] = [
           type: "array",
           minItems: 1,
           items: { type: "string" },
-          description: "Selection names whose nodes are fully fixed (all translations)",
+          description:
+            "Selection names whose nodes are fully fixed (all translations)",
         },
         loads: {
           type: "array",
@@ -99,13 +132,17 @@ export const solveTools: CalculixTool[] = [
           items: {
             type: "object",
             properties: {
-              selection: { type: "string", description: "Selection name carrying the load" },
+              selection: {
+                type: "string",
+                description: "Selection name carrying the load",
+              },
               force_n: {
                 type: "array",
                 items: { type: "number" },
                 minItems: 3,
                 maxItems: 3,
-                description: "TOTAL force vector [fx, fy, fz] in N, distributed over the set's nodes",
+                description:
+                  "TOTAL force vector [fx, fy, fz] in N, distributed over the set's nodes",
               },
             },
             required: ["selection", "force_n"],
@@ -114,15 +151,25 @@ export const solveTools: CalculixTool[] = [
         },
         timeout_ms: {
           type: "number",
-          description: "Time limit per external run (mesh, solve) in ms, default 120000",
+          description:
+            "Time limit per external run (mesh, solve) in ms, default 120000",
         },
       },
-      required: ["step_path", "mesh_size_mm", "material", "selections", "fixed", "loads"],
+      required: [
+        "step_path",
+        "mesh_size_mm",
+        "material",
+        "selections",
+        "fixed",
+        "loads",
+      ],
     },
     handler: async (args) => {
       const selections = args.selections as FaceSelection[];
       const fixed = args.fixed as string[];
-      const loads = args.loads as Array<{ selection: string; force_n: [number, number, number] }>;
+      const loads = args.loads as Array<
+        { selection: string; force_n: [number, number, number] }
+      >;
       const timeoutMs = (args.timeout_ms as number) ?? 120_000;
 
       // Referenced names must exist before any subprocess runs.
@@ -169,19 +216,39 @@ export const solveTools: CalculixTool[] = [
 
       const result = await solveDeck(deck, timeoutMs);
 
-      return {
+      const structuredContent = {
+        schemaVersion: STATIC_SOLVE_SCHEMA_VERSION,
+        kind: STATIC_SOLVE_KIND,
         mesh: {
           nodes: mesh.nodeCount,
           elements: mesh.elementCount,
           nodesPerSelection: mesh.nodesPerSet,
         },
-        max_displacement_mm: result.maxDisplacement.magnitudeMm,
-        max_displacement: {
-          node: result.maxDisplacement.nodeId,
-          vector_mm: result.maxDisplacement.vectorMm,
+        constraints: {
+          fixedSelections: fixed,
+          loads: loads.map((load) => ({
+            selection: load.selection,
+            forceN: load.force_n,
+          })),
         },
-        max_von_mises_mpa: result.maxVonMises.mpa,
-        max_von_mises_element: result.maxVonMises.elementId,
+        metrics: {
+          maxDisplacement: {
+            value: result.maxDisplacement.magnitudeMm,
+            unit: "mm" as const,
+            nodeId: result.maxDisplacement.nodeId,
+            vectorMm: result.maxDisplacement.vectorMm,
+          },
+          maxVonMises: {
+            value: result.maxVonMises.mpa,
+            unit: "MPa" as const,
+            elementId: result.maxVonMises.elementId,
+          },
+        },
+      };
+      return {
+        content:
+          `Static solve complete: ${structuredContent.mesh.nodes} nodes, max displacement ${structuredContent.metrics.maxDisplacement.value} mm, max von Mises ${structuredContent.metrics.maxVonMises.value} MPa.`,
+        structuredContent,
       };
     },
   },

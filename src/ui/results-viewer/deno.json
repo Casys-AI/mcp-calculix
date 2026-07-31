@@ -1,0 +1,27 @@
+{
+  "minimumDependencyAge": {
+    "age": "P1D",
+    "exclude": ["jsr:@casys/mcp-view"]
+  },
+  "compilerOptions": {
+    "lib": [
+      "deno.ns",
+      "deno.window",
+      "dom",
+      "dom.iterable",
+      "dom.asynciterable",
+      "esnext"
+    ]
+  },
+  "imports": {
+    "@casys/mcp-view": "jsr:@casys/mcp-view@0.4.0",
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "@std/path": "jsr:@std/path@^1.1.0"
+  },
+  "tasks": {
+    "build": "deno run -A build.ts",
+    "check": "deno check src/main.ts",
+    "test": "deno test --allow-read src",
+    "fmt": "deno fmt --check index.html build.ts src"
+  }
+}

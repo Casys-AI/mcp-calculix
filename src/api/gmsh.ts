@@ -218,7 +218,8 @@ export async function meshStep(options: MeshOptions): Promise<MeshResult> {
   clearTimeout(timer);
 
   if (!success) {
-    const log = new TextDecoder().decode(stdout) + new TextDecoder().decode(stderr);
+    const log = new TextDecoder().decode(stdout) +
+      new TextDecoder().decode(stderr);
     throw new MeshingError(
       `gmsh failed (killed after ${options.timeoutMs}ms, or meshing error): ${
         log.slice(-800)

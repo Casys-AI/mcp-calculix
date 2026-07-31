@@ -4,7 +4,11 @@
  * @module lib/calculix/tools/mod
  */
 
-export type { CalculixTool, CalculixToolCategory, CalculixToolHandler } from "./types.ts";
+export type {
+  CalculixTool,
+  CalculixToolCategory,
+  CalculixToolHandler,
+} from "./types.ts";
 export { solveTools } from "./solve.ts";
 
 import { solveTools } from "./solve.ts";
