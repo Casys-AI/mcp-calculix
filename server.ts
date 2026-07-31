@@ -1,8 +1,7 @@
 /** Stateless HTTP MCP server for deterministic CalculiX static solves. */
 
-import { McpApp } from "@casys/mcp-server";
+import { McpApp, type RegisterViewersSummary } from "@casys/mcp-server";
 import { CalculixToolsClient } from "./src/client.ts";
-import { CALCULIX_RESULTS_VIEWER_URI } from "./src/tools/solve.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
 const VERSION = "0.2.0";
@@ -13,6 +12,13 @@ export interface CreateCalculixServerOptions {
   /** Test seam for exercising the MCP wire without native solver binaries. */
   solveHandler?: CalculixToolHandler;
   logger?: (message: string) => void;
+  viewerFileSystem?: CalculixResultsViewerFileSystem;
+  viewerModuleUrl?: string;
+}
+
+export interface CalculixResultsViewerFileSystem {
+  exists(path: string): boolean;
+  readFile(path: string): string | Promise<string>;
 }
 
 export function createCalculixServer(
@@ -37,30 +43,82 @@ export function createCalculixServer(
       ((message) => console.error(`[mcp-calculix] ${message}`)),
   });
   app.registerTools(client.toMCPFormat(), handlers);
-  const hasResultsViewer = registerCalculixResultsViewer(app);
+  const viewerRegistration = registerCalculixResultsViewer(
+    app,
+    options.viewerFileSystem,
+    options.viewerModuleUrl,
+  );
+  const hasResultsViewer = viewerRegistration.registered.includes(
+    "results-viewer",
+  );
   return { app, hasResultsViewer };
 }
 
-export function registerCalculixResultsViewer(app: McpApp): boolean {
-  const summary = app.registerViewers({
+/** Register the optional built result viewer from a checkout or JSR package. */
+export function registerCalculixResultsViewer(
+  app: McpApp,
+  fileSystem: CalculixResultsViewerFileSystem = defaultViewerFileSystem,
+  moduleUrl: string = import.meta.url,
+): RegisterViewersSummary {
+  return app.registerViewers({
     prefix: "mcp-calculix",
     viewers: ["results-viewer"],
-    moduleUrl: import.meta.url,
-    exists: fileExists,
-    readFile: Deno.readTextFile,
+    moduleUrl,
+    exists: fileSystem.exists,
+    readFile: fileSystem.readFile,
+    humanName: () => "CalculiX Static Results",
   });
-  if (
-    summary.registered.length > 0 &&
-    !app.hasResource(CALCULIX_RESULTS_VIEWER_URI)
-  ) {
-    throw new Error(
-      `CalculiX viewer registered under an unexpected URI; expected ${CALCULIX_RESULTS_VIEWER_URI}`,
-    );
-  }
-  return summary.registered.length === 1;
 }
 
+/**
+ * JSR resolves `import.meta.url` to HTTPS, while a source checkout resolves it
+ * to a file path. The viewer is included in the package, so remote URLs are
+ * eligible at registration time and fetched only when a client reads them.
+ */
+export function createCalculixResultsViewerFileSystem(
+  fetchViewer: (url: string) => Promise<Response> = (url) => fetch(url),
+): CalculixResultsViewerFileSystem {
+  return {
+    exists(path) {
+      if (isRemoteViewerUrl(path)) return true;
+      try {
+        return Deno.statSync(path).isFile;
+      } catch (error) {
+        if (
+          error instanceof Deno.errors.NotFound ||
+          error instanceof Deno.errors.PermissionDenied ||
+          (error instanceof Error && error.name === "NotCapable")
+        ) {
+          return false;
+        }
+        throw error;
+      }
+    },
+    async readFile(path) {
+      if (!isRemoteViewerUrl(path)) return await Deno.readTextFile(path);
+      let response: Response;
+      try {
+        response = await fetchViewer(path);
+      } catch (error) {
+        throw new Error(
+          `Unable to fetch CalculiX results viewer from ${path}.`,
+          { cause: error },
+        );
+      }
+      if (!response.ok) {
+        throw new Error(
+          `Unable to fetch CalculiX results viewer from ${path}: HTTP ${response.status} ${response.statusText}.`,
+        );
+      }
+      return await response.text();
+    },
+  };
+}
+
+const defaultViewerFileSystem = createCalculixResultsViewerFileSystem();
+
 if (import.meta.main) {
+  const cli = parseCli(Deno.args);
   const { app, hasResultsViewer } = createCalculixServer();
   if (!hasResultsViewer) {
     console.error(
@@ -68,9 +126,8 @@ if (import.meta.main) {
     );
   }
   await app.startHttp({
-    port: portFrom(Deno.args) ?? integerEnv("MCP_PORT") ?? DEFAULT_PORT,
-    hostname: hostnameFrom(Deno.args) ?? env("MCP_HOSTNAME") ??
-      DEFAULT_HOSTNAME,
+    port: cli.port,
+    hostname: cli.hostname,
     corsOrigins: ["http://127.0.0.1", "http://localhost"],
     onListen: ({ hostname, port }) => {
       console.error(
@@ -80,29 +137,33 @@ if (import.meta.main) {
   });
 }
 
-function portFrom(args: readonly string[]): number | undefined {
-  const value = option(args, "--port");
-  return value === undefined ? undefined : positivePort(value, "--port");
+export interface CliOptions {
+  port: number;
+  hostname: string;
 }
 
-function hostnameFrom(args: readonly string[]): string | undefined {
-  const value = option(args, "--hostname");
-  if (value !== undefined && value.trim() === "") {
-    throw new TypeError("--hostname must not be empty");
-  }
-  return value;
-}
-
-function option(args: readonly string[], name: string): string | undefined {
+/** Parse the deliberately small stateless HTTP command surface. */
+export function parseCli(args: readonly string[]): CliOptions {
+  let port = integerEnv("MCP_PORT") ?? DEFAULT_PORT;
+  let hostname = env("MCP_HOSTNAME") ?? DEFAULT_HOSTNAME;
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
-    if (argument === name) return args[index + 1];
-    if (argument.startsWith(`${name}=`)) return argument.slice(name.length + 1);
+    if (argument.startsWith("--port=")) {
+      port = positivePort(argument.slice("--port=".length), "--port");
+    } else if (argument === "--port") {
+      port = positivePort(args[++index], "--port");
+    } else if (argument.startsWith("--hostname=")) {
+      hostname = nonEmpty(argument.slice("--hostname=".length), "--hostname");
+    } else if (argument === "--hostname") {
+      hostname = nonEmpty(args[++index], "--hostname");
+    } else {
+      throw new TypeError(`Unknown argument '${argument}'.`);
+    }
   }
-  return undefined;
+  return { port, hostname };
 }
 
-function positivePort(value: string, name: string): number {
+function positivePort(value: string | undefined, name: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 65_535) {
     throw new TypeError(`${name} must be an integer between 1 and 65535`);
@@ -115,6 +176,13 @@ function integerEnv(name: string): number | undefined {
   return value === undefined ? undefined : positivePort(value, name);
 }
 
+function nonEmpty(value: string | undefined, name: string): string {
+  if (!value || value.trim() === "") {
+    throw new TypeError(`${name} must not be empty`);
+  }
+  return value;
+}
+
 function env(name: string): string | undefined {
   try {
     return Deno.env.get(name);
@@ -123,9 +191,10 @@ function env(name: string): string | undefined {
   }
 }
 
-function fileExists(path: string): boolean {
+function isRemoteViewerUrl(path: string): boolean {
   try {
-    return Deno.statSync(path).isFile;
+    const protocol = new URL(path).protocol;
+    return protocol === "http:" || protocol === "https:";
   } catch {
     return false;
   }

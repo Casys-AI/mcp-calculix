@@ -1,5 +1,9 @@
-import { assert, assertEquals } from "@std/assert";
-import { createCalculixServer } from "../server.ts";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  createCalculixResultsViewerFileSystem,
+  createCalculixServer,
+  parseCli,
+} from "../server.ts";
 
 const PROTOCOL_VERSION = "2026-07-28";
 const META = {
@@ -97,6 +101,59 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
   } finally {
     await http.shutdown();
   }
+});
+
+Deno.test("CalculiX viewer resolves and serves the exact published JSR resource", async () => {
+  const moduleUrl = "https://jsr.io/@casys/mcp-calculix/0.2.0/server.ts";
+  const viewerUrl =
+    "https://jsr.io/@casys/mcp-calculix/0.2.0/src/ui/dist/results-viewer/index.html";
+  const html = "<!doctype html><title>Remote CalculiX results</title>";
+  const { app, hasResultsViewer } = createCalculixServer({
+    logger: () => {},
+    viewerModuleUrl: moduleUrl,
+    viewerFileSystem: {
+      exists: (path) => path === viewerUrl,
+      readFile: (path) => {
+        assertEquals(path, viewerUrl);
+        return html;
+      },
+    },
+  });
+
+  assertEquals(hasResultsViewer, true);
+  assertEquals(
+    (await app.readResourceContent("ui://mcp-calculix/results-viewer"))?.text,
+    html,
+  );
+});
+
+Deno.test("CalculiX remote viewer filesystem fetches HTTP resources actionably", async () => {
+  const viewerUrl =
+    "https://example.test/mcp-calculix/results-viewer/index.html";
+  const fileSystem = createCalculixResultsViewerFileSystem((url) => {
+    assertEquals(url, viewerUrl);
+    return Promise.resolve(
+      new Response("not published", { status: 404, statusText: "Not Found" }),
+    );
+  });
+
+  assertEquals(fileSystem.exists(viewerUrl), true);
+  await assertRejects(
+    () => Promise.resolve(fileSystem.readFile(viewerUrl)),
+    Error,
+    "Unable to fetch CalculiX results viewer",
+  );
+});
+
+Deno.test("CalculiX CLI accepts only stateless HTTP options", () => {
+  assertEquals(parseCli(["--port", "3018", "--hostname=0.0.0.0"]), {
+    port: 3018,
+    hostname: "0.0.0.0",
+  });
+  assertThrows(() => parseCli(["--http"]), TypeError, "Unknown argument");
+  assertThrows(() => parseCli(["stdio"]), TypeError, "Unknown argument");
+  assertThrows(() => parseCli(["--stdio"]), TypeError, "Unknown argument");
+  assertThrows(() => parseCli(["--unknown"]), TypeError, "Unknown argument");
 });
 
 function freePort(): number {
