@@ -1,80 +1,132 @@
-/**
- * MCP Server Bootstrap for CAD Tools
- *
- * Usage in an MCP config (stdio mode):
- * {
- *   "mcpServers": {
- *     "cad": {
- *       "command": "deno",
- *       "args": ["run", "--allow-all", "jsr:@casys/mcp-calculix/server"]
- *     }
- *   }
- * }
- *
- * HTTP mode (default port: 3015):
- *   deno run --allow-all server.ts --http --port=3015
- *
- * Environment:
- *   (none — gmsh and ccx are found on PATH; install with
- *    `apt install gmsh calculix-ccx`)
- *
- * @module lib/cad/server
- */
+/** Stateless HTTP MCP server for deterministic CalculiX static solves. */
 
-import { ConcurrentMCPServer } from "@casys/mcp-server";
+import { McpApp } from "@casys/mcp-server";
 import { CalculixToolsClient } from "./src/client.ts";
+import { CALCULIX_RESULTS_VIEWER_URI } from "./src/tools/solve.ts";
+import type { CalculixToolHandler } from "./src/tools/types.ts";
 
-const DEFAULT_HTTP_PORT = 3015;
+const VERSION = "0.2.0";
+const DEFAULT_PORT = 3015;
+const DEFAULT_HOSTNAME = "127.0.0.1";
 
-async function main() {
-  const args = Deno.args;
+export interface CreateCalculixServerOptions {
+  /** Test seam for exercising the MCP wire without native solver binaries. */
+  solveHandler?: CalculixToolHandler;
+  logger?: (message: string) => void;
+}
 
-  const categoriesArg = args.find((arg) => arg.startsWith("--categories="));
-  const categories = categoriesArg ? categoriesArg.split("=")[1].split(",") : undefined;
+export function createCalculixServer(
+  options: CreateCalculixServerOptions = {},
+): { app: McpApp; hasResultsViewer: boolean } {
+  const client = new CalculixToolsClient();
+  const handlers = client.buildHandlersMap();
+  if (options.solveHandler) {
+    handlers.set("calculix_solve_static", options.solveHandler);
+  }
 
-  const httpFlag = args.includes("--http");
-  const portArg = args.find((arg) => arg.startsWith("--port="));
-  const httpPort = portArg ? parseInt(portArg.split("=")[1], 10) : DEFAULT_HTTP_PORT;
-  const hostnameArg = args.find((arg) => arg.startsWith("--hostname="));
-  const hostname = hostnameArg ? hostnameArg.split("=")[1] : "127.0.0.1"; // loopback by default — these tools execute code; exposing them is an explicit choice
-
-  const toolsClient = new CalculixToolsClient(categories ? { categories } : undefined);
-
-  const server = new ConcurrentMCPServer({
+  const app = new McpApp({
     name: "mcp-calculix",
-    version: "0.1.1",
+    version: VERSION,
+    transport: "stateless",
     maxConcurrent: 4,
     backpressureStrategy: "queue",
     validateSchema: true,
-    logger: (msg) => console.error(`[mcp-calculix] ${msg}`),
+    instructions:
+      "Deterministic finite-element static solves. Results report mesh and physical observations only; no requirement verdict is produced.",
+    logger: options.logger ??
+      ((message) => console.error(`[mcp-calculix] ${message}`)),
   });
+  app.registerTools(client.toMCPFormat(), handlers);
+  const hasResultsViewer = registerCalculixResultsViewer(app);
+  return { app, hasResultsViewer };
+}
 
-  server.registerTools(toolsClient.toMCPFormat(), toolsClient.buildHandlersMap());
-
-  if (httpFlag) {
-    await server.startHttp({
-      port: httpPort,
-      hostname,
-      cors: true,
-      onListen: (info) => {
-        console.error(`[mcp-calculix] HTTP server listening on http://${info.hostname}:${info.port}`);
-      },
-    });
-    console.error(`[mcp-calculix] Server ready (${toolsClient.count} tools) - HTTP mode`);
-  } else {
-    await server.start();
-    console.error(`[mcp-calculix] Server ready (${toolsClient.count} tools) - stdio mode`);
+export function registerCalculixResultsViewer(app: McpApp): boolean {
+  const summary = app.registerViewers({
+    prefix: "mcp-calculix",
+    viewers: ["results-viewer"],
+    moduleUrl: import.meta.url,
+    exists: fileExists,
+    readFile: Deno.readTextFile,
+  });
+  if (
+    summary.registered.length > 0 &&
+    !app.hasResource(CALCULIX_RESULTS_VIEWER_URI)
+  ) {
+    throw new Error(
+      `CalculiX viewer registered under an unexpected URI; expected ${CALCULIX_RESULTS_VIEWER_URI}`,
+    );
   }
-
-  Deno.addSignalListener("SIGINT", () => {
-    console.error("[mcp-calculix] Shutting down...");
-    Deno.exit(0);
-  });
+  return summary.registered.length === 1;
 }
 
 if (import.meta.main) {
-  main().catch((error) => {
-    console.error("[mcp-calculix] Fatal error:", error);
-    Deno.exit(1);
+  const { app, hasResultsViewer } = createCalculixServer();
+  if (!hasResultsViewer) {
+    console.error(
+      "[mcp-calculix] Results viewer is not built; run `deno task build:ui`.",
+    );
+  }
+  await app.startHttp({
+    port: portFrom(Deno.args) ?? integerEnv("MCP_PORT") ?? DEFAULT_PORT,
+    hostname: hostnameFrom(Deno.args) ?? env("MCP_HOSTNAME") ??
+      DEFAULT_HOSTNAME,
+    corsOrigins: ["http://127.0.0.1", "http://localhost"],
+    onListen: ({ hostname, port }) => {
+      console.error(
+        `[mcp-calculix] Stateless MCP: http://${hostname}:${port}/mcp`,
+      );
+    },
   });
+}
+
+function portFrom(args: readonly string[]): number | undefined {
+  const value = option(args, "--port");
+  return value === undefined ? undefined : positivePort(value, "--port");
+}
+
+function hostnameFrom(args: readonly string[]): string | undefined {
+  const value = option(args, "--hostname");
+  if (value !== undefined && value.trim() === "") {
+    throw new TypeError("--hostname must not be empty");
+  }
+  return value;
+}
+
+function option(args: readonly string[], name: string): string | undefined {
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === name) return args[index + 1];
+    if (argument.startsWith(`${name}=`)) return argument.slice(name.length + 1);
+  }
+  return undefined;
+}
+
+function positivePort(value: string, name: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new TypeError(`${name} must be an integer between 1 and 65535`);
+  }
+  return parsed;
+}
+
+function integerEnv(name: string): number | undefined {
+  const value = env(name);
+  return value === undefined ? undefined : positivePort(value, name);
+}
+
+function env(name: string): string | undefined {
+  try {
+    return Deno.env.get(name);
+  } catch {
+    return undefined;
+  }
+}
+
+function fileExists(path: string): boolean {
+  try {
+    return Deno.statSync(path).isFile;
+  } catch {
+    return false;
+  }
 }

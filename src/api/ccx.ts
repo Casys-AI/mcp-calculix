@@ -115,7 +115,11 @@ export function buildDeck(options: DeckOptions): string {
 }
 
 export interface SolveResult {
-  maxDisplacement: { magnitudeMm: number; nodeId: number; vectorMm: [number, number, number] };
+  maxDisplacement: {
+    magnitudeMm: number;
+    nodeId: number;
+    vectorMm: [number, number, number];
+  };
   maxVonMises: { mpa: number; elementId: number };
 }
 
@@ -173,13 +177,20 @@ export function parseDat(datText: string): SolveResult {
   }
 
   return {
-    maxDisplacement: { magnitudeMm: maxU, nodeId: maxUNode, vectorMm: maxUVector },
+    maxDisplacement: {
+      magnitudeMm: maxU,
+      nodeId: maxUNode,
+      vectorMm: maxUVector,
+    },
     maxVonMises: { mpa: maxVm, elementId: maxVmElement },
   };
 }
 
 /** Run CalculiX on a deck and parse the results. */
-export async function solveDeck(deck: string, timeoutMs: number): Promise<SolveResult> {
+export async function solveDeck(
+  deck: string,
+  timeoutMs: number,
+): Promise<SolveResult> {
   const workDir = await Deno.makeTempDir({ prefix: "calculix-solve-" });
   await Deno.writeTextFile(`${workDir}/job.inp`, deck);
 
@@ -206,9 +217,11 @@ export async function solveDeck(deck: string, timeoutMs: number): Promise<SolveR
   clearTimeout(timer);
 
   try {
-    const log = new TextDecoder().decode(stdout) + new TextDecoder().decode(stderr);
+    const log = new TextDecoder().decode(stdout) +
+      new TextDecoder().decode(stderr);
     if (!success || log.includes("*ERROR")) {
-      const errorLines = log.split("\n").filter((l) => l.includes("ERROR")).join("\n");
+      const errorLines = log.split("\n").filter((l) => l.includes("ERROR"))
+        .join("\n");
       throw new SolveError(
         `CalculiX failed${success ? "" : " (non-zero exit or timeout)"}: ${
           errorLines || log.slice(-800)

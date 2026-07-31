@@ -24,6 +24,12 @@ export type {
 } from "./src/client.ts";
 
 export { solveTools } from "./src/tools/mod.ts";
+export {
+  STATIC_SOLVE_KIND,
+  STATIC_SOLVE_OUTPUT_SCHEMA,
+  STATIC_SOLVE_SCHEMA_VERSION,
+} from "./src/results.ts";
+export type { StaticSolveResult } from "./src/results.ts";
 
 export {
   buildGeoScript,
@@ -41,4 +47,9 @@ export {
   solveDeck,
   SolveError,
 } from "./src/api/ccx.ts";
-export type { DeckOptions, Material, NodalLoad, SolveResult } from "./src/api/ccx.ts";
+export type {
+  DeckOptions,
+  Material,
+  NodalLoad,
+  SolveResult,
+} from "./src/api/ccx.ts";

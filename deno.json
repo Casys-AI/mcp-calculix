@@ -1,9 +1,12 @@
 {
   "name": "@casys/mcp-calculix",
-  "version": "0.1.1",
-  "minimumDependencyAge": "0",
+  "version": "0.2.0",
+  "minimumDependencyAge": {
+    "age": "P1D",
+    "exclude": ["jsr:@casys/mcp-server"]
+  },
   "tasks": {
-    "serve": "deno run --allow-all server.ts --http --port=3015",
+    "serve": "deno run --allow-all server.ts --port=3015",
     "compile": "deno compile -A --output mcp-calculix server.ts",
     "test": "deno test --allow-all tests/"
   },
@@ -26,7 +29,7 @@
     ]
   },
   "imports": {
-    "@casys/mcp-server": "jsr:@casys/mcp-server@^0.22.0",
+    "@casys/mcp-server": "jsr:@casys/mcp-server@0.24.0",
     "ajv": "npm:ajv@^8.17.1",
     "hono": "npm:hono@^4",
     "hono/cors": "npm:hono@^4/cors",
