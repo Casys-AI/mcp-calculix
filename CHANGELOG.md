@@ -10,6 +10,11 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
   literal `$` sequences in its minified JavaScript bundle. The published HTML
   now contains a single document and a syntactically valid inline module.
 
+### Changed
+
+- Pin the shared stateless server layer to `@casys/mcp-server@0.24.1`; the
+  one-day dependency quarantine exception remains scoped to that package name.
+
 ## [0.2.0] - 2026-07-31
 
 ### Changed
