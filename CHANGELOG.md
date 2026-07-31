@@ -2,13 +2,33 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [0.2.0] - 2026-07-31
+
+### Changed
+
+- Migrated the server to `@casys/mcp-server@0.24.0` and the 2026-07-28
+  stateless HTTP transport.
+- `calculix_solve_static` now returns a closed, versioned `static-solve` v1
+  structured result: mesh counts, explicit constraints, measured extrema and
+  their physical node/element IDs.
+- Removed requirement conclusions and intermediate-file data from the public
+  solve result. Consumers can evaluate their own requirements from the
+  observations.
+
+### Added
+
+- A standalone `@casys/mcp-view@0.4.0` results viewer at
+  `ui://mcp-calculix/results-viewer`, built into the published package.
+- Stateless wire coverage for discovery, tool metadata/call and the viewer
+  resource; native Gmsh/CalculiX checks are now explicit opt-in tests.
+
 ## [0.1.0] - 2026-07-30
 
 Initial release.
 
 ### Added
 
-- **`calculix_solve_static`** — one deterministic pipeline: STEP file → Gmsh tetrahedral mesh → CalculiX linear static solve → max displacement (mm) and max von Mises stress (MPa). Validated end to end against the build123d spike bracket (500 N → 26.6 MPa, holds against Al 6061 yield with 213 MPa margin).
+- **`calculix_solve_static`** — one deterministic pipeline: STEP file → Gmsh tetrahedral mesh → CalculiX linear static solve → max displacement (mm) and max von Mises stress (MPa). Validated end to end against the build123d spike bracket (500 N → 26.6 MPa observed).
 - **Face designation by named bounding boxes** — every surface enclosed in a named box in mm becomes an Abaqus NSET. A box matching no surface is a hard error naming the selection.
 - **Everything physical explicit** — mesh size, element order (C3D4/C3D10), material constants (`e_mpa`, `nu` — never looked up from a name), total nodal forces. A selection both fixed and loaded is rejected.
 - **Subprocess bridges, plain text** — Gmsh and `ccx` over files, no Python, no WASM. Missing binaries raise errors carrying the install commands (`apt install gmsh calculix-ccx`).
