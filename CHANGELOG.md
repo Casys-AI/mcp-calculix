@@ -2,6 +2,14 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [0.2.1] - 2026-07-31
+
+### Fixed
+
+- Build the standalone results viewer with callback replacements, preserving
+  literal `$` sequences in its minified JavaScript bundle. The published HTML
+  now contains a single document and a syntactically valid inline module.
+
 ## [0.2.0] - 2026-07-31
 
 ### Changed

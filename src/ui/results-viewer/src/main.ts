@@ -20,7 +20,7 @@ async function boot(): Promise<void> {
   const root = document.getElementById("root");
   if (!root) throw new Error("The CalculiX results viewer root is missing.");
   await createMcpApp<ViewerState>({
-    info: { name: "CalculiX Static Results", version: "0.2.0" },
+    info: { name: "CalculiX Static Results", version: "0.2.1" },
     root,
     views: { result: resultView },
     initialView: "result",

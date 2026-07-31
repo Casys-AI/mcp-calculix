@@ -60,8 +60,12 @@ try {
   const css = await Deno.readTextFile(join(here, "src", "styles.css"));
   const js = await Deno.readTextFile(bundlePath);
   const html = template
-    .replace("/* STYLES_PLACEHOLDER */", css)
-    .replace("/* BUNDLE_PLACEHOLDER */", js)
+    // `String.replace` treats `$&`, `$\`` and friends in a replacement string
+    // as substitution tokens. A minified third-party bundle can legitimately
+    // contain those sequences, so return the generated asset from callbacks
+    // rather than passing it as a replacement string.
+    .replace("/* STYLES_PLACEHOLDER */", () => css)
+    .replace("/* BUNDLE_PLACEHOLDER */", () => js)
     // Third-party bundled code occasionally carries trailing spaces inside
     // template literals. They are not meaningful in a standalone resource and
     // would make the checked-in artifact fail git's whitespace check.
