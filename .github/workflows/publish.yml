@@ -19,11 +19,8 @@ jobs:
       - name: Install gmsh + CalculiX (solve backend)
         run: sudo apt-get update && sudo apt-get install -y gmsh calculix-ccx
 
-      - name: Type check
-        run: deno check mod.ts server.ts
-
-      - name: Run tests
-        run: deno test --allow-all tests/
+      - name: Verify server, viewer and native solve
+        run: deno task release:check
 
   publish-jsr:
     needs: check
