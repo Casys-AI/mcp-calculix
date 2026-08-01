@@ -6,13 +6,13 @@ import {
 import {
   CALCULIX_COMPONENT_KEYS,
   CALCULIX_COMPONENT_REGISTRY,
-} from "./components.ts";
+} from "./components.tsx";
+import type { PreactSurfaceContext } from "@casys/mcp-view/preact";
 import {
   parseStaticSolve,
   type StaticSolveResult,
   toolErrorMessage,
 } from "./model.ts";
-import { escapeHtml } from "./render.ts";
 
 const result: StaticSolveResult = {
   schemaVersion: "1.0",
@@ -37,6 +37,10 @@ const result: StaticSolveResult = {
   },
 };
 
+const componentContext = {} as unknown as PreactSurfaceContext<
+  StaticSolveResult
+>;
+
 Deno.test("results viewer parses exactly the static-solve v1 result", () => {
   assertEquals(parseStaticSolve(result), result);
   assertThrows(
@@ -47,7 +51,6 @@ Deno.test("results viewer parses exactly the static-solve v1 result", () => {
 });
 
 Deno.test("results viewer keeps safe error fallbacks", () => {
-  assertEquals(escapeHtml("<unsafe>"), "&lt;unsafe&gt;");
   assertEquals(
     toolErrorMessage({
       content: [{ type: "text", text: "Solver unavailable" }],
@@ -103,7 +106,7 @@ Deno.test({
             fixedSelections: ["<img src=x onerror=alert(1)>"],
           },
         },
-        appContext: {},
+        appContext: componentContext,
         hostContext: {},
       });
 
@@ -112,7 +115,7 @@ Deno.test({
       assertStringIncludes(root.textContent, "26.6");
       assertStringIncludes(root.textContent, "Node 26");
       assertStringIncludes(root.textContent, "Element 5229");
-      assertStringIncludes(root.textContent, "Nodes9669");
+      assertStringIncludes(root.textContent, "Nodes9,669");
       assertStringIncludes(root.textContent, "[0, 0, -500] N");
       assertEquals(root.innerHTML.includes("<img"), false);
       assertStringIncludes(root.textContent, "<img src=x onerror=alert(1)>");
@@ -149,7 +152,7 @@ Deno.test({
         root,
         registry: CALCULIX_COMPONENT_REGISTRY,
         data: result,
-        appContext: {},
+        appContext: componentContext,
         hostContext: {},
         surface: {
           layout: { type: "stack", gap: "sm" },

@@ -16,8 +16,8 @@ apt install gmsh calculix-ccx     # Debian/Ubuntu
 brew install gmsh calculix        # macOS
 ```
 
-Gmsh and CalculiX run as local subprocesses over files. Missing binaries
-produce an actionable install error.
+Gmsh and CalculiX run as local subprocesses over files. Missing binaries produce
+an actionable install error.
 
 ## Run the server
 
@@ -40,8 +40,14 @@ and client metadata; it has no connection handshake or retained client state.
   "mesh_size_mm": 3,
   "material": { "e_mpa": 70000, "nu": 0.33 },
   "selections": [
-    { "name": "FIXED",  "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] } },
-    { "name": "LOADED", "box": { "min": [-31, -21, 49.4], "max": [-24, 21, 50.1] } }
+    {
+      "name": "FIXED",
+      "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] }
+    },
+    {
+      "name": "LOADED",
+      "box": { "min": [-31, -21, 49.4], "max": [-24, 21, 50.1] }
+    }
   ],
   "fixed": ["FIXED"],
   "loads": [{ "selection": "LOADED", "force_n": [0, 0, -500] }]
@@ -83,25 +89,27 @@ IDs. It intentionally reports observations without classifying them.
 ### Composable result components
 
 The results MCP App publishes a component catalog under
-`io.casys.mcp.view-components/v1`. Compose or an agent may select any subset
-and arrange it with the bounded `stack`, `row`, or `grid` surface vocabulary:
+`io.casys.mcp.view-components/v1`. Compose or an agent may select any subset and
+arrange it with the bounded `stack`, `row`, or `grid` surface vocabulary:
 
-| Component key | Data rendered |
-| --- | --- |
-| `calculix.solve-metrics` | Maximum displacement and von Mises stress with their physical IDs |
-| `calculix.mesh-summary` | Node, element and named-selection counts |
-| `calculix.constraints` | Fixed selections and explicit load vectors |
-| `calculix.displacement-details` | Maximum-displacement vector plus extrema node/element IDs |
+| Component key                   | Data rendered                                                     |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `calculix.solve-metrics`        | Maximum displacement and von Mises stress with their physical IDs |
+| `calculix.mesh-summary`         | Node, element and named-selection counts                          |
+| `calculix.constraints`          | Fixed selections and explicit load vectors                        |
+| `calculix.displacement-details` | Maximum-displacement vector plus extrema node/element IDs         |
 
-The standalone default is a two-column surface containing all four components;
-its CSS collapses to one column in a narrow container. A dashboard states
-exactly which component instances it needs. `calculix_solve_static` is the sole
-result producer attached to this resource, so every component receives the
-same strict `static-solve` contract.
+The standalone default is a two-column surface containing all four components.
+Each block is a Preact component built from the shared `@casys/mcp-view/preact`
+presentation kit; the kit handles narrow-container behavior. Compose selects the
+exact component instances it needs, so embedded surfaces do not reproduce a
+standalone masthead or product shell. `calculix_solve_static` is the sole result
+producer attached to this resource, so every component receives the same strict
+`static-solve` contract.
 
 The viewer does not emit or consume domain Compose events: its result contains
-extrema and physical IDs but no geometry-selection contract to synchronize.
-MCP Apps input/result handlers remain registered before `connect()`. Surface
+extrema and physical IDs but no geometry-selection contract to synchronize. MCP
+Apps input/result handlers remain registered before `connect()`. Surface
 components and host-context listeners are disposed on route changes and host
 teardown.
 
@@ -112,8 +120,8 @@ teardown.
   lookup.
 - `loads[].force_n` is a total force vector in N, distributed across the
   selection's nodes.
-- Named, axis-aligned bounding boxes select faces deterministically. A box
-  that matches no face is a named hard error.
+- Named, axis-aligned bounding boxes select faces deterministically. A box that
+  matches no face is a named hard error.
 - A selection cannot be both fixed and loaded.
 
 ### Scope

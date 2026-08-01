@@ -1,8 +1,14 @@
-import { dirname, fromFileUrl, join } from "@std/path";
+import { dirname, fromFileUrl, join, resolve, toFileUrl } from "@std/path";
 
 const here = dirname(fromFileUrl(import.meta.url));
-const mcpViewModule = Deno.env.get("MCP_VIEW_MODULE") ??
-  "jsr:@casys/mcp-view@0.5.0";
+const localMcpViewRoot = Deno.env.get("MCP_VIEW_LOCAL_ROOT");
+const mcpViewModule = localMcpViewRoot
+  ? toFileUrl(resolve(Deno.cwd(), localMcpViewRoot, "mod.ts")).href
+  : Deno.env.get("MCP_VIEW_MODULE") ?? "jsr:@casys/mcp-view@0.7.0";
+const mcpViewPreactModule = localMcpViewRoot
+  ? toFileUrl(resolve(Deno.cwd(), localMcpViewRoot, "preact.ts")).href
+  : Deno.env.get("MCP_VIEW_PREACT_MODULE") ??
+    "jsr:@casys/mcp-view@0.7.0/preact";
 const temporaryDirectory = await Deno.makeTempDir({
   prefix: "mcp-view-result-viewer-",
 });
@@ -18,6 +24,8 @@ try {
         exclude: ["jsr:@casys/mcp-view"],
       },
       compilerOptions: {
+        jsx: "react-jsx",
+        jsxImportSource: "preact",
         lib: [
           "deno.ns",
           "deno.window",
@@ -29,11 +37,14 @@ try {
       },
       imports: {
         "@casys/mcp-view": mcpViewModule,
+        "@casys/mcp-view/preact": mcpViewPreactModule,
         "@modelcontextprotocol/ext-apps":
           "npm:@modelcontextprotocol/ext-apps@^1.7.4",
         "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.29.0",
         "@modelcontextprotocol/sdk/types.js":
           "npm:@modelcontextprotocol/sdk@^1.29.0/types.js",
+        "preact": "npm:preact@^10.28.3",
+        "preact/jsx-runtime": "npm:preact@^10.28.3/jsx-runtime",
       },
     }),
   );

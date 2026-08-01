@@ -38,4 +38,8 @@ Deno.test("built CalculiX viewer contains its small-component catalog", async ()
   assert(html.includes("calculix.mesh-summary"));
   assert(html.includes("calculix.constraints"));
   assert(html.includes("calculix.displacement-details"));
+  assert(html.includes("mcp-view-card"));
+  assert(html.includes("mcp-view-metrics"));
+  assertEquals(html.includes("MCP / STATIC SOLVE"), false);
+  assertEquals(html.includes('class="masthead"'), false);
 });

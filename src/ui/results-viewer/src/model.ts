@@ -1,4 +1,4 @@
-export interface StaticSolveResult {
+export interface StaticSolveResult extends Record<string, unknown> {
   schemaVersion: "1.0";
   kind: "static-solve";
   mesh: {

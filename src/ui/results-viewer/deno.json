@@ -4,6 +4,8 @@
     "exclude": ["jsr:@casys/mcp-view"]
   },
   "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "lib": [
       "deno.ns",
       "deno.window",
@@ -14,8 +16,11 @@
     ]
   },
   "imports": {
-    "@casys/mcp-view": "jsr:@casys/mcp-view@0.5.0",
+    "@casys/mcp-view": "jsr:@casys/mcp-view@0.7.0",
+    "@casys/mcp-view/preact": "jsr:@casys/mcp-view@0.7.0/preact",
     "linkedom": "npm:linkedom@0.18.12",
+    "preact": "npm:preact@^10.28.3",
+    "preact/jsx-runtime": "npm:preact@^10.28.3/jsx-runtime",
     "@std/assert": "jsr:@std/assert@^1.0.0",
     "@std/path": "jsr:@std/path@^1.1.0"
   },
