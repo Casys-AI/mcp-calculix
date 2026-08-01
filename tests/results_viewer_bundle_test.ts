@@ -24,3 +24,18 @@ Deno.test("CalculiX results viewer is one syntactically valid inline module", as
   // (notably `$\`` in minified dependencies) without executing the viewer.
   new Function(source);
 });
+
+Deno.test("built CalculiX viewer contains its small-component catalog", async () => {
+  const viewer = new URL(
+    "../src/ui/dist/results-viewer/index.html",
+    import.meta.url,
+  );
+  const html = await Deno.readTextFile(viewer);
+
+  assert(html.includes("io.casys.mcp.view-components/v1"));
+  assert(html.includes("io.casys.mcp.surface/v1"));
+  assert(html.includes("calculix.solve-metrics"));
+  assert(html.includes("calculix.mesh-summary"));
+  assert(html.includes("calculix.constraints"));
+  assert(html.includes("calculix.displacement-details"));
+});

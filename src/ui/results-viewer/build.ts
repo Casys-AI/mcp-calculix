@@ -2,7 +2,7 @@ import { dirname, fromFileUrl, join } from "@std/path";
 
 const here = dirname(fromFileUrl(import.meta.url));
 const mcpViewModule = Deno.env.get("MCP_VIEW_MODULE") ??
-  "jsr:@casys/mcp-view@0.4.0";
+  "jsr:@casys/mcp-view@0.5.0";
 const temporaryDirectory = await Deno.makeTempDir({
   prefix: "mcp-view-result-viewer-",
 });

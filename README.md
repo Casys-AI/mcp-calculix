@@ -80,6 +80,31 @@ The tool links its result view at `ui://mcp-calculix/results-viewer`. The view
 renders loading, constraints, mesh counts, extrema and the relevant physical
 IDs. It intentionally reports observations without classifying them.
 
+### Composable result components
+
+The results MCP App publishes a component catalog under
+`io.casys.mcp.view-components/v1`. Compose or an agent may select any subset
+and arrange it with the bounded `stack`, `row`, or `grid` surface vocabulary:
+
+| Component key | Data rendered |
+| --- | --- |
+| `calculix.solve-metrics` | Maximum displacement and von Mises stress with their physical IDs |
+| `calculix.mesh-summary` | Node, element and named-selection counts |
+| `calculix.constraints` | Fixed selections and explicit load vectors |
+| `calculix.displacement-details` | Maximum-displacement vector plus extrema node/element IDs |
+
+The standalone default is a two-column surface containing all four components;
+its CSS collapses to one column in a narrow container. A dashboard states
+exactly which component instances it needs. `calculix_solve_static` is the sole
+result producer attached to this resource, so every component receives the
+same strict `static-solve` contract.
+
+The viewer does not emit or consume domain Compose events: its result contains
+extrema and physical IDs but no geometry-selection contract to synchronize.
+MCP Apps input/result handlers remain registered before `connect()`. Surface
+components and host-context listeners are disposed on route changes and host
+teardown.
+
 ### Physical inputs
 
 - `mesh_size_mm` has no implicit default; choose it for the smallest feature.

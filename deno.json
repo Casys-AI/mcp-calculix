@@ -13,7 +13,7 @@
     "fmt": "deno fmt --check deno.json mod.ts server.ts src/api src/client.ts src/results.ts src/tools src/ui/results-viewer/build.ts src/ui/results-viewer/src tests",
     "release:check": "deno task fmt && deno task check && deno task lint && deno task test",
     "compile": "deno compile -A --output mcp-calculix server.ts",
-    "test": "deno test --allow-all tests/ src/ui/results-viewer/src/model_test.ts"
+    "test": "deno test --allow-all tests/ && deno test --config src/ui/results-viewer/deno.json --allow-all src/ui/results-viewer/src/model_test.ts"
   },
   "exports": {
     ".": "./mod.ts",

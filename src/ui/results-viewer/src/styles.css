@@ -59,10 +59,6 @@ h1 {
   font-size: clamp(22px, 5vw, 32px);
   letter-spacing: -.03em;
 }
-h2 {
-  margin-bottom: 12px;
-  font-size: 15px;
-}
 .readout {
   color: var(--accent);
   border: 1px solid currentColor;
@@ -70,83 +66,27 @@ h2 {
   font: 700 10px var(--font-data);
   letter-spacing: .09em;
 }
-.metric-pair,
-.panel,
-.state {
-  margin: 16px 20px;
-}
-.metric-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-.metric {
-  padding: 14px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 88%, var(--surface));
-}
-.metric p,
-.metric small {
-  color: var(--muted);
-}
-.metric strong {
-  display: block;
-  margin: 5px 0;
-  color: var(--accent);
-  font: 700 20px var(--font-data);
-}
-.metric small {
-  font-family: var(--font-data);
-}
-.panel {
-  padding: 14px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 88%, var(--surface));
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-.grid div {
+.surface-root {
   min-width: 0;
-  border-left: 2px solid var(--line);
-  padding-left: 9px;
+  padding: 20px;
 }
-dt,
-.muted {
-  color: var(--muted);
-  font-size: 12px;
+.mcp-view-component {
+  min-width: 0;
+  color: var(--text);
+  font-family: var(--font-body);
 }
-dd {
-  margin: 2px 0 0;
-  overflow-wrap: anywhere;
-  font: 600 13px var(--font-data);
-}
-.loads {
-  display: grid;
-  gap: 8px;
-}
-.loads article {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px;
-  border: 1px solid var(--line);
-}
-.loads strong {
-  color: var(--accent);
-  font: 700 12px var(--font-data);
-}
-code {
-  overflow-wrap: anywhere;
+.mcp-view-component strong,
+.mcp-view-component dd {
   font-family: var(--font-data);
+}
+.mcp-view-component[data-primitive="metric-grid"] strong {
+  color: var(--accent);
 }
 .state {
   min-height: 120px;
   display: grid;
   place-content: center;
+  padding: 20px;
   text-align: center;
 }
 .error {
@@ -171,23 +111,24 @@ code {
     animation: none;
   }
 }
-@media (max-width: 560px) {
+@media (max-width: 680px) {
   #root {
     padding: 8px;
   }
-  .masthead,
-  .loads article {
+  .masthead {
     display: block;
+    padding: 14px;
   }
   .readout {
     display: inline-block;
     margin-top: 8px;
   }
-  .metric-pair {
-    grid-template-columns: 1fr;
+  .surface-root {
+    padding: 10px;
   }
-  .loads code {
-    display: block;
-    margin-top: 6px;
+  .mcp-view-surface-grid,
+  .mcp-view-surface-row {
+    grid-auto-flow: row !important;
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 }
