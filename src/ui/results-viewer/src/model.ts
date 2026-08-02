@@ -1,5 +1,5 @@
 export interface StaticSolveResult extends Record<string, unknown> {
-  schemaVersion: "1.0";
+  schemaVersion: "2.0";
   kind: "static-solve";
   inputArtifact: {
     path: string;
@@ -35,9 +35,9 @@ export type DisplayState =
 
 export function parseStaticSolve(value: unknown): StaticSolveResult {
   const root = record(value, "structuredContent");
-  if (root.schemaVersion !== "1.0" || root.kind !== "static-solve") {
+  if (root.schemaVersion !== "2.0" || root.kind !== "static-solve") {
     throw new TypeError(
-      "Expected a static-solve result with schemaVersion 1.0.",
+      "Expected a static-solve result with schemaVersion 2.0.",
     );
   }
   const inputArtifact = record(root.inputArtifact, "inputArtifact");
@@ -50,7 +50,7 @@ export function parseStaticSolve(value: unknown): StaticSolveResult {
   );
   const maxVonMises = record(metrics.maxVonMises, "metrics.maxVonMises");
   return {
-    schemaVersion: "1.0",
+    schemaVersion: "2.0",
     kind: "static-solve",
     inputArtifact: {
       path: nonEmptyString(inputArtifact.path, "inputArtifact.path"),

@@ -4,6 +4,16 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-02
+
+### Changed
+
+- **Breaking:** the closed `static-solve` result is now schema version `2.0`.
+  Its required `inputArtifact` binds every solve to the exact STEP bytes passed
+  to Gmsh. The strict viewer rejects both v1 results and missing provenance.
+- `0.3.1` is superseded and must not be consumed: it added the required field
+  while incorrectly retaining schema version `1.0`.
+
 ## [0.3.1] - 2026-08-02
 
 ### Added

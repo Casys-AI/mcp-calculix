@@ -15,7 +15,7 @@ import {
 } from "./model.ts";
 
 const result: StaticSolveResult = {
-  schemaVersion: "1.0",
+  schemaVersion: "2.0",
   kind: "static-solve",
   inputArtifact: {
     path: "/tmp/calculix-input-example/input.step",
@@ -47,7 +47,7 @@ const componentContext = {} as unknown as PreactSurfaceContext<
   StaticSolveResult
 >;
 
-Deno.test("results viewer parses exactly the static-solve v1 result", () => {
+Deno.test("results viewer parses exactly the static-solve v2 result", () => {
   assertEquals(parseStaticSolve(result), result);
   const { inputArtifact: _missing, ...missingArtifact } = result;
   assertThrows(

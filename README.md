@@ -58,11 +58,11 @@ and client metadata; it has no connection handshake or retained client state.
 Before meshing, the tool copies `step_path` into a private per-call snapshot,
 computes SHA-256 from that copy, and optionally compares it with
 `expected_step_sha256`. A mismatch fails before Gmsh or CalculiX starts. The
-tool publishes a closed `structuredContent` contract at schema version `1.0`:
+tool publishes a closed `structuredContent` contract at schema version `2.0`:
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "kind": "static-solve",
   "inputArtifact": {
     "path": "/tmp/calculix-input-.../input.step",
@@ -161,7 +161,7 @@ the wire contract and pure parsing stages.
 
 ```
 server.ts                     # Stateless MCP application and HTTP entrypoint
-src/results.ts                # Closed static-solve v1 contract
+src/results.ts                # Closed static-solve v2 contract
 src/tools/solve.ts            # Native solve pipeline and viewer association
 src/ui/results-viewer/        # MCP App source and standalone build
 src/ui/dist/results-viewer/   # Published self-contained viewer resource

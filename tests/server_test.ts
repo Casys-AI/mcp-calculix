@@ -11,12 +11,12 @@ const META = {
   "io.modelcontextprotocol/clientCapabilities": {},
   "io.modelcontextprotocol/clientInfo": {
     name: "mcp-calculix-test",
-    version: "0.3.1",
+    version: "0.4.0",
   },
 };
 
 const SAMPLE_RESULT = {
-  schemaVersion: "1.0",
+  schemaVersion: "2.0",
   kind: "static-solve",
   inputArtifact: {
     path: "/tmp/calculix-input-example/input.step",
@@ -62,7 +62,7 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.3.1",
+      version: "0.4.0",
     });
 
     const listed = await rpc(url, "tools/list");

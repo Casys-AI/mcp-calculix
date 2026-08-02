@@ -64,7 +64,7 @@ Deno.test({
     ) as { structuredContent: Record<string, unknown> };
     const structured = result.structuredContent;
 
-    assertEquals(structured.schemaVersion, "1.0");
+    assertEquals(structured.schemaVersion, "2.0");
     assertEquals(structured.kind, "static-solve");
     const inputArtifact = structured.inputArtifact as {
       sourcePath: string;

@@ -1,6 +1,6 @@
 /** Strict, viewer-safe result contract for one CalculiX static solve. */
 
-export const STATIC_SOLVE_SCHEMA_VERSION = "1.0";
+export const STATIC_SOLVE_SCHEMA_VERSION = "2.0";
 export const STATIC_SOLVE_KIND = "static-solve";
 
 export interface StaticSolveResult {
