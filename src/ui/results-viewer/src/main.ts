@@ -7,7 +7,7 @@ if (!root) throw new Error("The CalculiX results viewer root is missing.");
 
 void startPreactSurfaceApp<StaticSolveResult>({
   root,
-  info: { name: "CalculiX Static Results", version: "0.3.0" },
+  info: { name: "CalculiX Static Results", version: "0.3.1" },
   registry: CALCULIX_COMPONENT_REGISTRY,
   surfaceClassName: "calculix-component-surface",
   loadingLabel: "Receiving static solve observations…",

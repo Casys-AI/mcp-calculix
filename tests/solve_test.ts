@@ -11,8 +11,13 @@ import {
   buildGeoScript,
   cleanInp,
   MeshingError,
+  meshStep,
   validateSetName,
 } from "../src/api/gmsh.ts";
+import {
+  InputArtifactError,
+  snapshotStepArtifact,
+} from "../src/api/input-artifact.ts";
 
 const BRACKET_STEP =
   new URL("./fixtures/bracket.step", import.meta.url).pathname;
@@ -37,6 +42,17 @@ const BRACKET_CASE = {
 };
 const RUN_NATIVE = Deno.env.get("CALCULIX_RUN_NATIVE") === "1";
 
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    Uint8Array.from(bytes).buffer,
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 // ── Integration: the full pipeline ──────────────────────────────────────────
 
 Deno.test({
@@ -50,6 +66,15 @@ Deno.test({
 
     assertEquals(structured.schemaVersion, "1.0");
     assertEquals(structured.kind, "static-solve");
+    const inputArtifact = structured.inputArtifact as {
+      sourcePath: string;
+      sha256: string;
+      bytes: number;
+    };
+    assertEquals(inputArtifact.sourcePath, BRACKET_STEP);
+    const sourceBytes = await Deno.readFile(BRACKET_STEP);
+    assertEquals(inputArtifact.sha256, await sha256Hex(sourceBytes));
+    assertEquals(inputArtifact.bytes, sourceBytes.length);
     const mesh = structured.mesh as {
       nodes: number;
       nodesPerSelection: Record<string, number>;
@@ -117,6 +142,7 @@ Deno.test("calculix_solve_static declares a closed MCP App static-solve contract
   assertEquals(tool?.outputSchema.required, [
     "schemaVersion",
     "kind",
+    "inputArtifact",
     "mesh",
     "constraints",
     "metrics",
@@ -124,6 +150,47 @@ Deno.test("calculix_solve_static declares a closed MCP App static-solve contract
   assertEquals(
     tool?._meta?.ui?.resourceUri,
     "ui://mcp-calculix/results-viewer",
+  );
+});
+
+Deno.test("snapshotStepArtifact attests the private copy and enforces an expected digest", async () => {
+  const source = await Deno.makeTempFile({ suffix: ".step" });
+  const content = "ISO-10303-21;\nEND-ISO-10303-21;\n";
+  await Deno.writeTextFile(source, content);
+  let snapshot;
+  try {
+    snapshot = await snapshotStepArtifact(source);
+    assertEquals(snapshot.artifact.sourcePath, source);
+    assertEquals(
+      snapshot.artifact.bytes,
+      new TextEncoder().encode(content).length,
+    );
+    assertEquals(
+      snapshot.artifact.sha256,
+      await sha256Hex(new TextEncoder().encode(content)),
+    );
+    assertEquals(await Deno.readTextFile(snapshot.artifact.path), content);
+
+    const verified = await snapshotStepArtifact(
+      source,
+      snapshot.artifact.sha256.toUpperCase(),
+    );
+    await verified.cleanup();
+  } finally {
+    await snapshot?.cleanup();
+    await Deno.remove(source).catch(() => {});
+  }
+});
+
+Deno.test("calculix_solve_static rejects a STEP digest mismatch before meshing", async () => {
+  await assertRejects(
+    async () =>
+      await getHandler("calculix_solve_static")({
+        ...structuredClone(BRACKET_CASE),
+        expected_step_sha256: "0".repeat(64),
+      }),
+    InputArtifactError,
+    "STEP SHA-256 mismatch",
   );
 });
 
@@ -258,9 +325,12 @@ Deno.test("meshStep - a STEP path that could escape the .geo string is rejected"
   // a quote in the path is an injection vector, not a file-name quirk.
   await assertRejects(
     async () =>
-      await getHandler("calculix_solve_static")({
-        ...structuredClone(BRACKET_CASE),
-        step_path: `/tmp/x"; System "id"; //.step`,
+      await meshStep({
+        stepPath: `/tmp/x"; System "id"; //.step`,
+        selections: [],
+        meshSizeMm: 3,
+        elementOrder: 2,
+        timeoutMs: 1000,
       }),
     MeshingError,
     "cannot be embedded safely",

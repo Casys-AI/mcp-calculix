@@ -17,6 +17,12 @@ import {
 const result: StaticSolveResult = {
   schemaVersion: "1.0",
   kind: "static-solve",
+  inputArtifact: {
+    path: "/tmp/calculix-input-example/input.step",
+    sourcePath: "/exports/bracket.step",
+    sha256: "a".repeat(64),
+    bytes: 4256,
+  },
   mesh: {
     nodes: 9669,
     elements: 5568,
@@ -43,6 +49,12 @@ const componentContext = {} as unknown as PreactSurfaceContext<
 
 Deno.test("results viewer parses exactly the static-solve v1 result", () => {
   assertEquals(parseStaticSolve(result), result);
+  const { inputArtifact: _missing, ...missingArtifact } = result;
+  assertThrows(
+    () => parseStaticSolve(missingArtifact),
+    TypeError,
+    "inputArtifact",
+  );
   assertThrows(
     () => parseStaticSolve({ ...result, kind: "run" }),
     TypeError,
@@ -115,6 +127,9 @@ Deno.test({
       assertStringIncludes(root.textContent, "26.6");
       assertStringIncludes(root.textContent, "Node 26");
       assertStringIncludes(root.textContent, "Element 5229");
+      assertStringIncludes(root.textContent, "/exports/bracket.step");
+      assertStringIncludes(root.textContent, "a".repeat(64));
+      assertStringIncludes(root.textContent, "4,256");
       assertStringIncludes(root.textContent, "Nodes9,669");
       assertStringIncludes(root.textContent, "[0, 0, -500] N");
       assertEquals(root.innerHTML.includes("<img"), false);

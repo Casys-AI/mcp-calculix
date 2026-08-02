@@ -16,6 +16,7 @@
 import type { CalculixTool } from "./types.ts";
 import { type FaceSelection, meshStep } from "../api/gmsh.ts";
 import { buildDeck, type NodalLoad, solveDeck } from "../api/ccx.ts";
+import { snapshotStepArtifact } from "../api/input-artifact.ts";
 import {
   STATIC_SOLVE_KIND,
   STATIC_SOLVE_OUTPUT_SCHEMA,
@@ -35,7 +36,9 @@ export const solveTools: CalculixTool[] = [
       "get the part's bounding box from build123d_execute first. Fully fixed " +
       "supports and total nodal forces only (no pressure loads yet). All " +
       "physical inputs are explicit: material constants are never looked up " +
-      "from a name. Requires gmsh and ccx on PATH (apt install gmsh " +
+      "from a name. The STEP is copied into a private snapshot and its " +
+      "computed SHA-256 is returned; pass expected_step_sha256 to require " +
+      "a specific upstream export. Requires gmsh and ccx on PATH (apt install gmsh " +
       "calculix-ccx). Units: mm, N, MPa.",
     category: "solve",
     outputSchema: STATIC_SOLVE_OUTPUT_SCHEMA,
@@ -52,6 +55,14 @@ export const solveTools: CalculixTool[] = [
         step_path: {
           type: "string",
           description: "Absolute path to the STEP file to analyse",
+        },
+        expected_step_sha256: {
+          type: "string",
+          pattern: "^[a-fA-F0-9]{64}$",
+          description:
+            "Optional SHA-256 expected for the STEP bytes. CalculiX copies " +
+            "the source into a private snapshot, hashes that copy, and " +
+            "rejects a mismatch before starting Gmsh or ccx.",
         },
         mesh_size_mm: {
           type: "number",
@@ -191,65 +202,75 @@ export const solveTools: CalculixTool[] = [
         );
       }
 
-      const mesh = await meshStep({
-        stepPath: args.step_path as string,
-        selections,
-        meshSizeMm: args.mesh_size_mm as number,
-        elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
-        timeoutMs,
-      });
+      const snapshot = await snapshotStepArtifact(
+        args.step_path as string,
+        args.expected_step_sha256 as string | undefined,
+      );
 
-      const materialInput = args.material as { e_mpa: number; nu: number };
-      const nodalLoads: NodalLoad[] = loads.map((l) => ({
-        selection: l.selection,
-        totalForceN: l.force_n,
-      }));
+      try {
+        const mesh = await meshStep({
+          stepPath: snapshot.artifact.path,
+          selections,
+          meshSizeMm: args.mesh_size_mm as number,
+          elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
+          timeoutMs,
+        });
 
-      const deck = buildDeck({
-        inpText: mesh.inpText,
-        maxNodeId: mesh.maxNodeId,
-        material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
-        fixed,
-        loads: nodalLoads,
-        nodesPerSet: mesh.nodesPerSet,
-      });
+        const materialInput = args.material as { e_mpa: number; nu: number };
+        const nodalLoads: NodalLoad[] = loads.map((l) => ({
+          selection: l.selection,
+          totalForceN: l.force_n,
+        }));
 
-      const result = await solveDeck(deck, timeoutMs);
+        const deck = buildDeck({
+          inpText: mesh.inpText,
+          maxNodeId: mesh.maxNodeId,
+          material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
+          fixed,
+          loads: nodalLoads,
+          nodesPerSet: mesh.nodesPerSet,
+        });
 
-      const structuredContent = {
-        schemaVersion: STATIC_SOLVE_SCHEMA_VERSION,
-        kind: STATIC_SOLVE_KIND,
-        mesh: {
-          nodes: mesh.nodeCount,
-          elements: mesh.elementCount,
-          nodesPerSelection: mesh.nodesPerSet,
-        },
-        constraints: {
-          fixedSelections: fixed,
-          loads: loads.map((load) => ({
-            selection: load.selection,
-            forceN: load.force_n,
-          })),
-        },
-        metrics: {
-          maxDisplacement: {
-            value: result.maxDisplacement.magnitudeMm,
-            unit: "mm" as const,
-            nodeId: result.maxDisplacement.nodeId,
-            vectorMm: result.maxDisplacement.vectorMm,
+        const result = await solveDeck(deck, timeoutMs);
+
+        const structuredContent = {
+          schemaVersion: STATIC_SOLVE_SCHEMA_VERSION,
+          kind: STATIC_SOLVE_KIND,
+          inputArtifact: snapshot.artifact,
+          mesh: {
+            nodes: mesh.nodeCount,
+            elements: mesh.elementCount,
+            nodesPerSelection: mesh.nodesPerSet,
           },
-          maxVonMises: {
-            value: result.maxVonMises.mpa,
-            unit: "MPa" as const,
-            elementId: result.maxVonMises.elementId,
+          constraints: {
+            fixedSelections: fixed,
+            loads: loads.map((load) => ({
+              selection: load.selection,
+              forceN: load.force_n,
+            })),
           },
-        },
-      };
-      return {
-        content:
-          `Static solve complete: ${structuredContent.mesh.nodes} nodes, max displacement ${structuredContent.metrics.maxDisplacement.value} mm, max von Mises ${structuredContent.metrics.maxVonMises.value} MPa.`,
-        structuredContent,
-      };
+          metrics: {
+            maxDisplacement: {
+              value: result.maxDisplacement.magnitudeMm,
+              unit: "mm" as const,
+              nodeId: result.maxDisplacement.nodeId,
+              vectorMm: result.maxDisplacement.vectorMm,
+            },
+            maxVonMises: {
+              value: result.maxVonMises.mpa,
+              unit: "MPa" as const,
+              elementId: result.maxVonMises.elementId,
+            },
+          },
+        };
+        return {
+          content:
+            `Static solve complete for STEP sha256:${snapshot.artifact.sha256}: ${structuredContent.mesh.nodes} nodes, max displacement ${structuredContent.metrics.maxDisplacement.value} mm, max von Mises ${structuredContent.metrics.maxVonMises.value} MPa.`,
+          structuredContent,
+        };
+      } finally {
+        await snapshot.cleanup();
+      }
     },
   },
 ];

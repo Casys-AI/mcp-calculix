@@ -6,6 +6,12 @@ export const STATIC_SOLVE_KIND = "static-solve";
 export interface StaticSolveResult {
   schemaVersion: typeof STATIC_SOLVE_SCHEMA_VERSION;
   kind: typeof STATIC_SOLVE_KIND;
+  inputArtifact: {
+    path: string;
+    sourcePath: string;
+    sha256: string;
+    bytes: number;
+  };
   mesh: {
     nodes: number;
     elements: number;
@@ -37,10 +43,28 @@ export interface StaticSolveResult {
 export const STATIC_SOLVE_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "kind", "mesh", "constraints", "metrics"],
+  required: [
+    "schemaVersion",
+    "kind",
+    "inputArtifact",
+    "mesh",
+    "constraints",
+    "metrics",
+  ],
   properties: {
     schemaVersion: { const: STATIC_SOLVE_SCHEMA_VERSION },
     kind: { const: STATIC_SOLVE_KIND },
+    inputArtifact: {
+      type: "object",
+      additionalProperties: false,
+      required: ["path", "sourcePath", "sha256", "bytes"],
+      properties: {
+        path: { type: "string", minLength: 1 },
+        sourcePath: { type: "string", minLength: 1 },
+        sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        bytes: { type: "integer", minimum: 1 },
+      },
+    },
     mesh: {
       type: "object",
       additionalProperties: false,

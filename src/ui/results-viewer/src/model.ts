@@ -1,6 +1,12 @@
 export interface StaticSolveResult extends Record<string, unknown> {
   schemaVersion: "1.0";
   kind: "static-solve";
+  inputArtifact: {
+    path: string;
+    sourcePath: string;
+    sha256: string;
+    bytes: number;
+  };
   mesh: {
     nodes: number;
     elements: number;
@@ -34,6 +40,7 @@ export function parseStaticSolve(value: unknown): StaticSolveResult {
       "Expected a static-solve result with schemaVersion 1.0.",
     );
   }
+  const inputArtifact = record(root.inputArtifact, "inputArtifact");
   const mesh = record(root.mesh, "mesh");
   const constraints = record(root.constraints, "constraints");
   const metrics = record(root.metrics, "metrics");
@@ -45,6 +52,15 @@ export function parseStaticSolve(value: unknown): StaticSolveResult {
   return {
     schemaVersion: "1.0",
     kind: "static-solve",
+    inputArtifact: {
+      path: nonEmptyString(inputArtifact.path, "inputArtifact.path"),
+      sourcePath: nonEmptyString(
+        inputArtifact.sourcePath,
+        "inputArtifact.sourcePath",
+      ),
+      sha256: sha256(inputArtifact.sha256, "inputArtifact.sha256"),
+      bytes: positiveInteger(inputArtifact.bytes, "inputArtifact.bytes"),
+    },
     mesh: {
       nodes: positiveInteger(mesh.nodes, "mesh.nodes"),
       elements: positiveInteger(mesh.elements, "mesh.elements"),
@@ -93,6 +109,13 @@ export function parseStaticSolve(value: unknown): StaticSolveResult {
       },
     },
   };
+}
+
+function sha256(value: unknown, name: string): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+    throw new TypeError(`${name} must be a lowercase SHA-256 digest.`);
+  }
+  return value;
 }
 
 export function toolErrorMessage(value: unknown): string {

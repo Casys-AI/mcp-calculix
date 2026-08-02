@@ -37,6 +37,7 @@ and client metadata; it has no connection handshake or retained client state.
 ```json
 {
   "step_path": "/path/to/bracket.step",
+  "expected_step_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "mesh_size_mm": 3,
   "material": { "e_mpa": 70000, "nu": 0.33 },
   "selections": [
@@ -54,13 +55,21 @@ and client metadata; it has no connection handshake or retained client state.
 }
 ```
 
-The tool publishes a closed `structuredContent` contract at schema version
-`1.0`. It contains only the mesh, constraints and measured extrema:
+Before meshing, the tool copies `step_path` into a private per-call snapshot,
+computes SHA-256 from that copy, and optionally compares it with
+`expected_step_sha256`. A mismatch fails before Gmsh or CalculiX starts. The
+tool publishes a closed `structuredContent` contract at schema version `1.0`:
 
 ```json
 {
   "schemaVersion": "1.0",
   "kind": "static-solve",
+  "inputArtifact": {
+    "path": "/tmp/calculix-input-.../input.step",
+    "sourcePath": "/path/to/bracket.step",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "bytes": 4256
+  },
   "mesh": {
     "nodes": 9669,
     "elements": 5568,
@@ -81,6 +90,11 @@ The tool publishes a closed `structuredContent` contract at schema version
   }
 }
 ```
+
+`inputArtifact.path` is the private snapshot actually passed to Gmsh; it is an
+audit path and is removed when the tool call finishes. `sourcePath` is only the
+location supplied by the caller. Identity and chaining must use `sha256`, not
+either mutable path.
 
 The tool links its result view at `ui://mcp-calculix/results-viewer`. The view
 renders loading, constraints, mesh counts, extrema and the relevant physical
@@ -116,6 +130,8 @@ teardown.
 ### Physical inputs
 
 - `mesh_size_mm` has no implicit default; choose it for the smallest feature.
+- `expected_step_sha256` is optional, but recommended when chaining from
+  `build123d_export.files[].sha256`; the returned digest is always recomputed.
 - `material.e_mpa` and `material.nu` are explicit constants, never a material
   lookup.
 - `loads[].force_n` is a total force vector in N, distributed across the

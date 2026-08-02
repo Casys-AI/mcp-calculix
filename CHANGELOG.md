@@ -4,6 +4,19 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-02
+
+### Added
+
+- `calculix_solve_static` now snapshots the STEP input before meshing and
+  returns the computed `inputArtifact` SHA-256 and byte length. Callers may
+  provide `expected_step_sha256`; a mismatch fails before Gmsh or ccx starts.
+
+### Changed
+
+- The result viewer requires the attested input artifact and exposes its
+  source, exact byte count and SHA-256. Results without provenance are rejected.
+
 ## [0.3.0] - 2026-08-01
 
 ### Changed

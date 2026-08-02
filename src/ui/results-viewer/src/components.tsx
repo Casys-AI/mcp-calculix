@@ -138,6 +138,21 @@ const ExtremaDetails = ({ data }: CalculixComponentProps) => (
     <KeyValueList
       items={[
         {
+          id: "input-source",
+          label: "STEP source",
+          value: data.inputArtifact.sourcePath,
+        },
+        {
+          id: "input-sha256",
+          label: "STEP SHA-256",
+          value: data.inputArtifact.sha256,
+        },
+        {
+          id: "input-bytes",
+          label: "STEP bytes",
+          value: formatInteger(data.inputArtifact.bytes),
+        },
+        {
           id: "displacement-node",
           label: "Displacement node",
           value: data.metrics.maxDisplacement.nodeId,
@@ -191,7 +206,7 @@ export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
       {
         title: "Extrema details",
         description:
-          "Maximum-displacement vector and the extrema node/element IDs.",
+          "Attested STEP identity plus the maximum-displacement vector and extrema node/element IDs.",
       },
       ExtremaDetails,
     ),
