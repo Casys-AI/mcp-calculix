@@ -10,16 +10,36 @@ export type {
   CalculixToolHandler,
 } from "./types.ts";
 export { solveTools } from "./solve.ts";
+export { modalTools } from "./modal.ts";
+export { buckleTools } from "./buckling.ts";
+export { creepTools } from "./creep.ts";
+export { coupledThermalTools } from "./coupled_thermal.ts";
 
+import { buckleTools } from "./buckling.ts";
+import { coupledThermalTools } from "./coupled_thermal.ts";
+import { creepTools } from "./creep.ts";
+import { modalTools } from "./modal.ts";
 import { solveTools } from "./solve.ts";
 import type { CalculixTool } from "./types.ts";
 
 /** All CalculiX tools combined */
-export const allTools: CalculixTool[] = [...solveTools];
+export const allTools: CalculixTool[] = [
+  ...solveTools,
+  ...modalTools,
+  ...buckleTools,
+  ...creepTools,
+  ...coupledThermalTools,
+];
 
 /** Tools organized by category */
 export const toolsByCategory: Record<string, CalculixTool[]> = {
-  solve: solveTools,
+  solve: [
+    ...solveTools,
+    ...modalTools,
+    ...buckleTools,
+    ...creepTools,
+    ...coupledThermalTools,
+  ],
 };
 
 export function getToolsByCategory(category: string): CalculixTool[] {

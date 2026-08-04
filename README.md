@@ -1,13 +1,29 @@
 # @casys/mcp-calculix
 
-Stateless HTTP MCP server for deterministic finite-element static analysis of
-STEP files. It meshes with [Gmsh](https://gmsh.info), solves with
-[CalculiX](http://www.calculix.de), and returns one strict physical-results
-contract through `calculix_solve_static`.
+Stateless HTTP MCP server for deterministic finite-element analysis of STEP
+files. It meshes with [Gmsh](https://gmsh.info), solves with
+[CalculiX](http://www.calculix.de), and returns strict physical-results
+contracts through five tools: `calculix_solve_static`,
+`calculix_solve_modal`, `calculix_solve_buckling`, `calculix_solve_creep`,
+and `calculix_solve_coupled_thermal`.
 
 ```
-STEP part → Gmsh tetrahedral mesh → CalculiX static solve → physical results
+STEP part → Gmsh tetrahedral mesh → CalculiX solve → physical results
 ```
+
+## Tools
+
+| Tool | Analysis | Output |
+|------|----------|--------|
+| `calculix_solve_static` | Linear static (*STATIC) | max displacement (mm), max von Mises (MPa) |
+| `calculix_solve_modal` | Eigenfrequency (*FREQUENCY) | natural frequencies (Hz) |
+| `calculix_solve_buckling` | Linear buckling (*BUCKLE) | critical load factors |
+| `calculix_solve_creep` | Viscoplastic creep (*VISCO + Norton law) | end-state displacement (mm), von Mises (MPa) |
+| `calculix_solve_coupled_thermal` | Coupled temperature-displacement (*COUPLED TEMPERATURE-DISPLACEMENT, steady state) | max temperature (°C), displacement (mm), von Mises (MPa) |
+
+All tools share the same face-selection convention (named axis-aligned bounding
+boxes in mm) and STEP attestation (SHA-256 snapshot before any meshing starts).
+Units: mm, N, MPa throughout.
 
 ## Requirements
 
@@ -142,9 +158,9 @@ teardown.
 
 ### Scope
 
-Linear static solves only; fully fixed supports, nodal loads, and first- or
-second-order tetrahedra. No pressure, thermal, modal, contact or requirement
-evaluation. Units are mm, N and MPa.
+Fully fixed supports, nodal loads, first- or second-order tetrahedra.
+No pressure, thermal-mechanical coupling, contact or requirement evaluation.
+Units are mm, N and MPa.
 
 ## Development
 
@@ -160,13 +176,25 @@ the wire contract and pure parsing stages.
 ## Package layout
 
 ```
-server.ts                     # Stateless MCP application and HTTP entrypoint
-src/results.ts                # Closed static-solve v2 contract
-src/tools/solve.ts            # Native solve pipeline and viewer association
-src/ui/results-viewer/        # MCP App source and standalone build
-src/ui/dist/results-viewer/   # Published self-contained viewer resource
-tests/server_test.ts          # Stateless wire and resource contract
-tests/solve_test.ts           # Pure and opt-in native solve checks
+server.ts                          # Stateless MCP application and HTTP entrypoint
+src/results.ts                     # Closed result contracts (static v2, modal/buckle/creep/thermal v1)
+src/api/ccx.ts                     # Deck builders, parsers, ccx subprocess bridge
+src/tools/solve.ts                 # Static solve pipeline
+src/tools/modal.ts                 # Modal (*FREQUENCY) pipeline
+src/tools/buckling.ts              # Buckling (*BUCKLE) two-step pipeline
+src/tools/creep.ts                 # Creep (*VISCO + Norton) pipeline
+src/tools/coupled_thermal.ts       # Coupled temperature-displacement (steady state)
+src/ui/results-viewer/             # MCP App source and standalone build
+src/ui/dist/results-viewer/        # Published self-contained viewer resource
+tests/server_test.ts               # Stateless wire and resource contract
+tests/solve_test.ts                # Static: pure and opt-in native checks
+tests/modal_buckle_test.ts         # Modal + buckling: pure and opt-in native checks
+tests/creep_thermal_test.ts        # Creep + coupled thermal: pure and opt-in native checks
+tests/fixtures/bracket.step        # Reference STEP for all native tests
+tests/fixtures/bracket_modal.dat   # Real ccx 2.21 *FREQUENCY output (generated)
+tests/fixtures/bracket_buckle.dat  # Real ccx 2.21 *BUCKLE output (generated)
+tests/fixtures/bracket_creep.dat   # Real ccx 2.21 *VISCO output (generated, 7 increments)
+tests/fixtures/bracket_thermal.dat # Real ccx 2.21 *COUPLED output (generated, steady state)
 ```
 
 ## License
