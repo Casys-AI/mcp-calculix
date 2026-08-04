@@ -4,6 +4,38 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-05
+
+### Added
+
+- **`calculix_solve_modal`** — eigenfrequency (*FREQUENCY) analysis: STEP →
+  Gmsh mesh → CalculiX free-vibration solve → natural frequencies in Hz.
+  - `density_kg_m3` is required (no default); converted to t/mm³ by exact
+    factor 1e-12 (1 kg/m³ = 1e-12 t/mm³ in the mm/N/MPa/t/s unit system).
+  - CalculiX requires uppercase-E scientific notation for density; the deck
+    builder uses `toCcxFloat()` (`Number.prototype.toExponential(6).toUpperCase()`)
+    to avoid the silent rejection of lowercase-e values.
+  - `n_modes` in [1, 30] (default 6). Output: `frequenciesHz[]` ascending.
+  - Validated on `bracket.step` (Al 6061, 4 mm quadratic mesh, fixed base):
+    f₁ = 1762.9 Hz, f₂ = 4732.5 Hz, f₃ = 9296.1 Hz.
+
+- **`calculix_solve_buckling`** — linear buckling (*BUCKLE) analysis: STEP →
+  Gmsh mesh → two-step ccx (step 1: *STATIC preload; step 2: *BUCKLE
+  eigensolver) → critical load factors.
+  - P_crit = load_factor × applied_load. A factor < 1 means the applied load
+    already exceeds the critical buckling load.
+  - The two-step deck is mandatory: the *STATIC step builds the geometric
+    stiffness matrix; omitting it yields degenerate zero factors.
+  - `n_modes` in [1, 30] (default 2). Loads are required.
+  - Validated on `bracket.step` (Al 6061, 4 mm quadratic mesh, 500 N on wing):
+    factor₁ = 61.11 (P_crit,1 ≈ 30.6 kN), factor₂ = 514.4.
+
+### Changed
+
+- `solveDeck()` now delegates subprocess management to the private
+  `runCcxRaw()` helper, eliminating code duplication across procedures.
+  External interface is unchanged.
+
 ## [0.4.0] - 2026-08-02
 
 ### Changed

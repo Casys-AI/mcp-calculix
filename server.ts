@@ -4,7 +4,7 @@ import { McpApp, type RegisterViewersSummary } from "@casys/mcp-server";
 import { CalculixToolsClient } from "./src/client.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 
