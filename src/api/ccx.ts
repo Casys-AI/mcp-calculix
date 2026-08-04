@@ -186,11 +186,14 @@ export function parseDat(datText: string): SolveResult {
   };
 }
 
-/** Run CalculiX on a deck and parse the results. */
-export async function solveDeck(
-  deck: string,
-  timeoutMs: number,
-): Promise<SolveResult> {
+/**
+ * Run CalculiX on a deck in a private temporary directory, return raw .dat
+ * text.  All subprocess management, timeout, and error surfacing live here;
+ * parsers are separate pure functions.
+ *
+ * Private — callers use the typed wrappers below.
+ */
+async function runCcxRaw(deck: string, timeoutMs: number): Promise<string> {
   const workDir = await Deno.makeTempDir({ prefix: "calculix-solve-" });
   await Deno.writeTextFile(`${workDir}/job.inp`, deck);
 
@@ -228,15 +231,359 @@ export async function solveDeck(
         }`,
       );
     }
-
     let datText;
     try {
       datText = await Deno.readTextFile(`${workDir}/job.dat`);
     } catch {
       throw new SolveError("CalculiX finished but wrote no .dat result file.");
     }
-    return parseDat(datText);
+    return datText;
   } finally {
     await Deno.remove(workDir, { recursive: true }).catch(() => {});
   }
+}
+
+/** Run CalculiX on a deck and parse the static results. */
+export async function solveDeck(
+  deck: string,
+  timeoutMs: number,
+): Promise<SolveResult> {
+  return parseDat(await runCcxRaw(deck, timeoutMs));
+}
+
+// ── Modal (*FREQUENCY) ────────────────────────────────────────────────────────
+
+/**
+ * Format a floating-point value for the CalculiX input deck.
+ *
+ * CalculiX rejects lowercase-e scientific notation (e.g. "2.7e-9") and
+ * requires uppercase E (e.g. "2.700000E-9").  Call this helper whenever a
+ * number might be rendered in scientific notation by JavaScript's default
+ * string conversion — particularly for very small values like mass density.
+ */
+function toCcxFloat(value: number): string {
+  return value.toExponential(6).toUpperCase();
+}
+
+export interface ModalDeckOptions {
+  /** Cleaned mesh from the gmsh bridge. */
+  inpText: string;
+  maxNodeId: number;
+  material: Material;
+  /**
+   * Mass density in kg/m³ — REQUIRED for frequency analysis.
+   * Converted internally to t/mm³ by the exact factor 1e-12:
+   *   1 kg/m³ = (1e-3 t) / (1e9 mm³) = 1e-12 t/mm³.
+   * There is no default — a density that looks like a value is not one.
+   */
+  densityKgM3: number;
+  /** Selections whose nodes are fully fixed (all three translations). */
+  fixed: string[];
+  /**
+   * Number of eigenfrequencies to compute, in [1, 30].
+   * Must not exceed the free DOF count of the mesh (= 3 × unconstrained
+   * nodes); requesting more modes than DOF causes ccx to return fewer.
+   */
+  nModes: number;
+}
+
+/** Build the complete CalculiX input deck for a *FREQUENCY analysis. */
+export function buildModalDeck(options: ModalDeckOptions): string {
+  const { material } = options;
+  if (!(material.eMpa > 0) || !(material.nu > 0 && material.nu < 0.5)) {
+    throw new SolveError(
+      `Material out of range: e_mpa must be > 0 and nu in (0, 0.5), got ` +
+        `e_mpa=${material.eMpa}, nu=${material.nu}.`,
+    );
+  }
+  if (!(options.densityKgM3 > 0)) {
+    throw new SolveError(
+      `density_kg_m3 must be > 0, got ${options.densityKgM3}. ` +
+        `Eigenfrequency analysis requires an explicit mass density — ` +
+        `there is no default (Al 6061: 2700, steel: 7850).`,
+    );
+  }
+  if (
+    !Number.isInteger(options.nModes) ||
+    options.nModes < 1 ||
+    options.nModes > 30
+  ) {
+    throw new SolveError(
+      `n_modes must be an integer in [1, 30], got ${options.nModes}.`,
+    );
+  }
+
+  // 1 kg/m³ = 1e-12 t/mm³ (exact: 1 t = 1000 kg, 1 m³ = 1e9 mm³).
+  // Writing the density with toCcxFloat is required: JavaScript renders
+  // very small numbers with a lowercase-e exponent that CalculiX rejects.
+  const densityTMm3 = options.densityKgM3 * 1e-12;
+
+  const lines: string[] = [options.inpText.trimEnd()];
+  lines.push(
+    `*NSET, NSET=NALL, GENERATE`,
+    `1, ${options.maxNodeId}`,
+    `*MATERIAL, NAME=MAT`,
+    `*ELASTIC`,
+    `${material.eMpa}, ${material.nu}`,
+    // *DENSITY must appear inside *MATERIAL before *SOLID SECTION.
+    `*DENSITY`,
+    toCcxFloat(densityTMm3),
+    `*SOLID SECTION, ELSET=PART, MATERIAL=MAT`,
+    `*STEP`,
+    `*FREQUENCY`,
+    `${options.nModes}`,
+    `*BOUNDARY`,
+  );
+  for (const name of options.fixed) {
+    lines.push(`${name},1,3`);
+  }
+  lines.push(
+    `*NODE PRINT, NSET=NALL`,
+    `U`,
+    `*END STEP`,
+    ``,
+  );
+  return lines.join("\n");
+}
+
+export interface ModalResult {
+  /** Eigenfrequencies in ascending order (ccx returns them sorted), in Hz. */
+  frequenciesHz: number[];
+}
+
+/**
+ * Parse the *FREQUENCY .dat output.
+ *
+ * The eigenvalue output section header is letter-spaced:
+ *   "E I G E N V A L U E   O U T P U T"
+ *
+ * Each data row has five columns (0-based):
+ *   0: mode number
+ *   1: eigenvalue λ (rad²/s²)
+ *   2: angular frequency ω (rad/s)
+ *   3: frequency f (Hz) — CYCLES/TIME column
+ *   4: imaginary part of ω (zero for real eigenvalues)
+ *
+ * Column 3 (f in Hz) is what this function returns.  Verification:
+ *   f_hz = ω_rad_s / (2π)
+ * A parser that reads column 2 instead of 3 silently returns rad/s values
+ * mislabelled as Hz — 2π× too large.
+ */
+export function parseModalDat(datText: string): ModalResult {
+  const frequenciesHz: number[] = [];
+  let inSection = false;
+  const numberPattern = /[-+]?\d+\.?\d*(?:E[-+]\d+)?/g;
+
+  for (const line of datText.split("\n")) {
+    // The exact header is space-padded: "E I G E N V A L U E   O U T P U T".
+    // "E I G E N V A L U E    N U M B E R" (per-mode shape sections) also
+    // contains "E I G E N V A L U E" but does NOT contain "O U T P U T".
+    if (line.includes("E I G E N V A L U E") && line.includes("O U T P U T")) {
+      inSection = true;
+      continue;
+    }
+    if (!inSection) continue;
+
+    // The eigenvalue table is followed by PARTICIPATION FACTORS, EFFECTIVE
+    // MODAL MASS, TOTAL EFFECTIVE MASS — stop before any of them.
+    if (
+      line.includes("P A R T I C I P A T I O N") ||
+      line.includes("E F F E C T I V E") ||
+      line.includes("T O T A L")
+    ) {
+      break;
+    }
+
+    const numbers = (line.match(numberPattern) ?? []).map(Number);
+    if (numbers.length === 5) {
+      // numbers[3]: frequency in Hz (CYCLES/TIME column).
+      frequenciesHz.push(numbers[3]);
+    }
+  }
+
+  if (frequenciesHz.length === 0) {
+    throw new SolveError(
+      "The .dat file contains no eigenvalue output section — " +
+        "the frequency solve likely did not converge or produced no output. " +
+        `.dat starts with: ${datText.slice(0, 200)}`,
+    );
+  }
+
+  return { frequenciesHz };
+}
+
+/** Run CalculiX on a modal deck and parse eigenfrequencies. */
+export async function solveModalDeck(
+  deck: string,
+  timeoutMs: number,
+): Promise<ModalResult> {
+  return parseModalDat(await runCcxRaw(deck, timeoutMs));
+}
+
+// ── Buckling (*BUCKLE) ────────────────────────────────────────────────────────
+
+export interface BuckleDeckOptions {
+  /** Cleaned mesh from the gmsh bridge. */
+  inpText: string;
+  maxNodeId: number;
+  material: Material;
+  /** Selections whose nodes are fully fixed (all three translations). */
+  fixed: string[];
+  loads: NodalLoad[];
+  /** Node count per set, to split total forces into per-node values. */
+  nodesPerSet: Record<string, number>;
+  /**
+   * Number of buckling modes to compute, in [1, 30].
+   * Mode 1 is the lowest (most critical) load factor.
+   */
+  nModes: number;
+}
+
+/**
+ * Build the complete two-step CalculiX input deck for a *BUCKLE analysis.
+ *
+ * Step 1 (*STATIC) applies the reference loads and builds the geometric
+ * (stress) stiffness matrix.  Step 2 (*BUCKLE) finds the eigenvalues λ_i
+ * such that (K_elastic + λ_i·K_geometric)·U = 0.
+ *
+ * The critical load is: P_crit = load_factor × applied_load (from step 1).
+ * A load_factor < 1 means the applied load already exceeds the critical load.
+ */
+export function buildBuckleDeck(options: BuckleDeckOptions): string {
+  const { material } = options;
+  if (!(material.eMpa > 0) || !(material.nu > 0 && material.nu < 0.5)) {
+    throw new SolveError(
+      `Material out of range: e_mpa must be > 0 and nu in (0, 0.5), got ` +
+        `e_mpa=${material.eMpa}, nu=${material.nu}.`,
+    );
+  }
+  if (
+    !Number.isInteger(options.nModes) ||
+    options.nModes < 1 ||
+    options.nModes > 30
+  ) {
+    throw new SolveError(
+      `n_modes must be an integer in [1, 30], got ${options.nModes}.`,
+    );
+  }
+
+  // Shared *CLOAD lines — per-node forces derived from total forces.
+  const cloadLines: string[] = [];
+  for (const load of options.loads) {
+    const nodes = options.nodesPerSet[load.selection];
+    if (!nodes) {
+      throw new SolveError(
+        `Load references selection '${load.selection}' which has no nodes.`,
+      );
+    }
+    for (const [axis, total] of load.totalForceN.entries()) {
+      if (total !== 0) {
+        cloadLines.push(`${load.selection},${axis + 1},${total / nodes}`);
+      }
+    }
+  }
+
+  // Shared *BOUNDARY lines.
+  const boundaryLines = options.fixed.map((name) => `${name},1,3`);
+
+  const lines: string[] = [options.inpText.trimEnd()];
+  lines.push(
+    `*NSET, NSET=NALL, GENERATE`,
+    `1, ${options.maxNodeId}`,
+    `*MATERIAL, NAME=MAT`,
+    `*ELASTIC`,
+    `${material.eMpa}, ${material.nu}`,
+    `*SOLID SECTION, ELSET=PART, MATERIAL=MAT`,
+    // Step 1: static preload — builds the geometric stiffness matrix.
+    `*STEP`,
+    `*STATIC`,
+    `*BOUNDARY`,
+    ...boundaryLines,
+    `*CLOAD`,
+    ...cloadLines,
+    `*END STEP`,
+    // Step 2: buckling eigensolver.
+    // The same boundary conditions and loads define the reference state.
+    `*STEP`,
+    `*BUCKLE`,
+    `${options.nModes}`,
+    `*BOUNDARY`,
+    ...boundaryLines,
+    `*CLOAD`,
+    ...cloadLines,
+    `*NODE PRINT, NSET=NALL`,
+    `U`,
+    `*END STEP`,
+    ``,
+  );
+  return lines.join("\n");
+}
+
+export interface BuckleResult {
+  /**
+   * Critical load factors in ascending order (mode 1 is the lowest).
+   * P_critical = load_factor × applied_load.
+   * A factor < 1 means the applied load already exceeds the critical load.
+   */
+  loadFactors: number[];
+}
+
+/**
+ * Parse the *BUCKLE .dat output.
+ *
+ * The buckling factor section header is letter-spaced:
+ *   "B U C K L I N G   F A C T O R   O U T P U T"
+ *
+ * Each data row has exactly two columns:
+ *   0: mode number
+ *   1: buckling load factor
+ *
+ * The section ends when the per-mode displacement sections begin
+ * ("E I G E N V A L U E    N U M B E R").
+ */
+export function parseBuckleDat(datText: string): BuckleResult {
+  const loadFactors: number[] = [];
+  let inSection = false;
+  const numberPattern = /[-+]?\d+\.?\d*(?:E[-+]\d+)?/g;
+
+  for (const line of datText.split("\n")) {
+    if (
+      line.includes("B U C K L I N G") &&
+      line.includes("F A C T O R") &&
+      line.includes("O U T P U T")
+    ) {
+      inSection = true;
+      continue;
+    }
+    if (!inSection) continue;
+
+    // Per-mode eigenvector displacement sections start here — stop.
+    if (line.includes("E I G E N V A L U E    N U M B E R")) {
+      break;
+    }
+
+    const numbers = (line.match(numberPattern) ?? []).map(Number);
+    if (numbers.length === 2) {
+      // numbers[0] is the mode index, numbers[1] is the load factor.
+      loadFactors.push(numbers[1]);
+    }
+  }
+
+  if (loadFactors.length === 0) {
+    throw new SolveError(
+      "The .dat file contains no buckling factor output section — " +
+        "the buckle solve likely did not converge or produced no output. " +
+        `.dat starts with: ${datText.slice(0, 200)}`,
+    );
+  }
+
+  return { loadFactors };
+}
+
+/** Run CalculiX on a buckling deck and parse critical load factors. */
+export async function solveBuckleDeck(
+  deck: string,
+  timeoutMs: number,
+): Promise<BuckleResult> {
+  return parseBuckleDat(await runCcxRaw(deck, timeoutMs));
 }
