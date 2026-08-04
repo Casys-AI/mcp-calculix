@@ -23,11 +23,23 @@ export type {
   MCPToolWireFormat,
 } from "./src/client.ts";
 
-export { buckleTools, modalTools, solveTools } from "./src/tools/mod.ts";
+export {
+  buckleTools,
+  coupledThermalTools,
+  creepTools,
+  modalTools,
+  solveTools,
+} from "./src/tools/mod.ts";
 export {
   BUCKLE_SOLVE_KIND,
   BUCKLE_SOLVE_OUTPUT_SCHEMA,
   BUCKLE_SOLVE_SCHEMA_VERSION,
+  COUPLED_THERMAL_SOLVE_KIND,
+  COUPLED_THERMAL_SOLVE_OUTPUT_SCHEMA,
+  COUPLED_THERMAL_SOLVE_SCHEMA_VERSION,
+  CREEP_SOLVE_KIND,
+  CREEP_SOLVE_OUTPUT_SCHEMA,
+  CREEP_SOLVE_SCHEMA_VERSION,
   MODAL_SOLVE_KIND,
   MODAL_SOLVE_OUTPUT_SCHEMA,
   MODAL_SOLVE_SCHEMA_VERSION,
@@ -37,6 +49,8 @@ export {
 } from "./src/results.ts";
 export type {
   BuckleSolveResult,
+  CoupledThermalSolveResult,
+  CreepSolveResult,
   ModalSolveResult,
   StaticSolveResult,
 } from "./src/results.ts";
@@ -52,13 +66,19 @@ export {
 export type { FaceSelection, MeshOptions, MeshResult } from "./src/api/gmsh.ts";
 export {
   buildBuckleDeck,
+  buildCoupledThermalDeck,
+  buildCreepDeck,
   buildDeck,
   buildModalDeck,
   CcxNotFoundError,
   parseBuckleDat,
+  parseCoupledThermalDat,
   parseDat,
+  parseDatLastIncrement,
   parseModalDat,
   solveBuckleDeck,
+  solveCoupledThermalDeck,
+  solveCreepDeck,
   solveDeck,
   SolveError,
   solveModalDeck,
@@ -66,10 +86,14 @@ export {
 export type {
   BuckleDeckOptions,
   BuckleResult,
+  CoupledThermalDeckOptions,
+  CoupledThermalResult,
+  CreepDeckOptions,
   DeckOptions,
   Material,
   ModalDeckOptions,
   ModalResult,
   NodalLoad,
   SolveResult,
+  ThermalBC,
 } from "./src/api/ccx.ts";
