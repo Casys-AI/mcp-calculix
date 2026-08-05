@@ -162,6 +162,37 @@ Fully fixed supports, nodal loads, first- or second-order tetrahedra.
 No pressure, thermal-mechanical coupling, contact or requirement evaluation.
 Units are mm, N and MPa.
 
+## Docker
+
+The Dockerfile at the repository root builds a self-contained image with Deno
+2.9.4, Gmsh 4.12, and CalculiX 2.21 (Ubuntu 24.04 — `calculix-ccx` is absent
+from Debian trixie). All JSR/npm dependencies are cached at build time; the
+container starts without network access.
+
+```bash
+# Build (arm64 shown; omit --platform for the host default)
+docker build --platform linux/arm64 -t mcp-calculix:local .
+
+# Run — port 3015 in the parc, bound to loopback on the host
+docker run -d --name mcp-calculix \
+  -p 127.0.0.1:3015:3015 \
+  -v exports:/exports \
+  mcp-calculix:local
+
+# Smoke test (stateless 2026-07-28 protocol)
+curl -s -X POST http://127.0.0.1:3015/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/list' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+The server binds `0.0.0.0:3015` inside the container so the published port is
+reachable from the host. Override with `MCP_PORT` / `MCP_HOSTNAME` env vars.
+STEP files and results land on the `/exports` volume; mount the same volume as
+the `mcp-build123d` container to chain a CAD export directly into a FEA solve.
+
 ## Development
 
 ```bash
