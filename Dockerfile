@@ -51,8 +51,7 @@ RUN deno cache --frozen server.ts
 
 EXPOSE 3015
 
-# The server defaults to 127.0.0.1 (loopback). --hostname=0.0.0.0 binds all
-# interfaces so the port is reachable outside the container.
-# Override with MCP_PORT / MCP_HOSTNAME env vars if needed at deploy time.
-CMD ["deno", "run", "--allow-all", "--cached-only", "--frozen", \
-     "server.ts", "--port=3015", "--hostname=0.0.0.0"]
+# docker-entrypoint.sh and scripts/ are already present via COPY . .
+# Two modes: http (default) and stdio (docker run -i <image> stdio).
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["http"]

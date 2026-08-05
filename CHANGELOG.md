@@ -4,6 +4,17 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-05
+
+### Added
+
+- `scripts/stdio-shim.ts`: stdio → stateless-HTTP adapter. Classic-SDK stdio clients
+  (Docker MCP Toolkit, desktop hosts) get `initialize` answered locally from
+  `server/discover`; everything else is forwarded in the 2026-07-28 stateless envelope,
+  which is the only revision the server accepts on the wire.
+- `docker-entrypoint.sh`: the image now has two run modes — `http` (default, unchanged)
+  and `stdio` (`docker run -i <image> stdio`).
+
 ## [0.5.0] - 2026-08-05
 
 ### Added
