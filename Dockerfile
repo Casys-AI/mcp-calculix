@@ -47,7 +47,7 @@ COPY . .
 
 # Resolve and cache the full local module graph from the HTTP entrypoint so
 # deno can start with --cached-only (no network at runtime).
-RUN deno cache --frozen server.ts
+RUN deno cache --frozen server.ts scripts/stdio-shim.ts
 
 EXPOSE 3015
 
