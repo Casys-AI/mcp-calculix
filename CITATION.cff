@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "mcp-calculix: MCP server for FEA — Gmsh meshing + CalculiX linear static solve on STEP files, driven by AI agents"
+authors:
+  - family-names: Pesle
+    given-names: Erwan Lee
+year: 2026
+license: MIT
+repository-code: https://github.com/Casys-AI/mcp-calculix
+type: software
