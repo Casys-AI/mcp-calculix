@@ -4,6 +4,21 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-11
+
+### Added
+
+- Recorded static solves with durable request identity, bounded run retention,
+  exact artifact ledgers, MCP resources, and read-only recovery by request ID.
+- Exact STEP, meshing, deck, solver-log, DAT, and normalized-result evidence,
+  revalidated causally before commit and after restart.
+
+### Changed
+
+- Recorded execution now claims a request before native probing and never
+  blindly redispatches an ambiguous, quarantined, completed, or evicted request.
+- Runtime state under `state/` is explicitly excluded from source control.
+
 ## [0.6.0] - 2026-08-05
 
 ### Added

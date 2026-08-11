@@ -11,7 +11,7 @@ const META = {
   "io.modelcontextprotocol/clientCapabilities": {},
   "io.modelcontextprotocol/clientInfo": {
     name: "mcp-calculix-test",
-    version: "0.6.0",
+    version: "0.7.0",
   },
 };
 
@@ -62,7 +62,7 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.6.0",
+      version: "0.7.0",
     });
 
     const listed = await rpc(url, "tools/list");
