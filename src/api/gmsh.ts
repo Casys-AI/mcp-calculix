@@ -59,6 +59,25 @@ export interface MeshResult {
   nodesPerSet: Record<string, number>;
 }
 
+/** Exact, text artifacts emitted during one Gmsh invocation. */
+export interface MeshRecordedArtifacts {
+  /** The `.geo` program actually handed to Gmsh. */
+  geoText: string;
+  /** SHA-256 of the private `input.step` copy resolved by the recorded .geo. */
+  inputStepSha256: string;
+  /** Exact byte length of the private `input.step` copy resolved by Gmsh. */
+  inputStepBytes: number;
+  /** Gmsh stdout and stderr, concatenated in process order groups. */
+  diagnostics: string;
+  /** Cleaned Abaqus mesh actually used to build the CalculiX deck. */
+  cleanedInpText: string;
+}
+
+export interface RecordedMeshResult {
+  mesh: MeshResult;
+  artifacts: MeshRecordedArtifacts;
+}
+
 /** NSET names are written into the deck — keep them strictly boring. */
 export function validateSetName(name: string): void {
   if (!/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(name)) {
@@ -72,7 +91,8 @@ export function validateSetName(name: string): void {
 /** Build the .geo script driving Gmsh. */
 export function buildGeoScript(options: MeshOptions): string {
   const lines: string[] = [];
-  // Gmsh resolves Merge relative to the .geo file — give it an absolute path.
+  // Gmsh resolves Merge relative to the .geo file. Recorded execution passes
+  // the stable private name `input.step`; legacy callers may still pass paths.
   lines.push(`Merge "${options.stepPath}";`);
 
   for (const selection of options.selections) {
@@ -177,9 +197,19 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
 
 /** Run Gmsh on a STEP file and return the cleaned mesh. */
 export async function meshStep(options: MeshOptions): Promise<MeshResult> {
-  // The path is interpolated into a .geo script, and Gmsh's .geo language
-  // has a System command that executes shell commands — a quote in the path
-  // would be a command injection vector, not a file-name quirk.
+  return (await meshStepRecorded(options)).mesh;
+}
+
+/**
+ * Mesh a STEP snapshot and retain the exact textual artifacts long enough for
+ * a caller to put them in its own durable evidence store.  This API does not
+ * choose where evidence lives; tools own that lifecycle.
+ */
+export async function meshStepRecorded(
+  options: MeshOptions,
+): Promise<RecordedMeshResult> {
+  // Preserve the legacy public path contract even though the recorded flow
+  // subsequently copies it into a stable private relative input.
   if (/["\\\r\n]/.test(options.stepPath)) {
     throw new MeshingError(
       `STEP path contains characters that cannot be embedded safely in a ` +
@@ -195,60 +225,104 @@ export async function meshStep(options: MeshOptions): Promise<MeshResult> {
   const workDir = await Deno.makeTempDir({ prefix: "calculix-mesh-" });
   const geoPath = `${workDir}/mesh.geo`;
   const inpPath = `${workDir}/mesh.inp`;
-  await Deno.writeTextFile(geoPath, buildGeoScript(options));
-
-  let child;
+  const stableInputPath = `${workDir}/input.step`;
   try {
-    child = new Deno.Command("gmsh", {
-      args: [geoPath, "-3", "-format", "inp", "-o", inpPath],
-      stdout: "piped",
-      stderr: "piped",
-    }).spawn();
-  } catch (e) {
-    if (e instanceof Deno.errors.NotFound) throw new GmshNotFoundError();
-    throw e;
-  }
-
-  const timer = setTimeout(() => {
+    let inputStep: Uint8Array;
     try {
-      child.kill("SIGKILL");
-    } catch { /* already exited */ }
-  }, options.timeoutMs);
-  const { success, stdout, stderr } = await child.output();
-  clearTimeout(timer);
+      // Do not interpolate a caller/private temporary path into the evidence.
+      // The recorded program has a stable relative dependency and Gmsh runs in
+      // the directory containing the exact private bytes.
+      inputStep = await Deno.readFile(options.stepPath);
+      if (inputStep.length < 1) {
+        throw new MeshingError("STEP file is empty.");
+      }
+      await Deno.writeFile(stableInputPath, inputStep, { mode: 0o400 });
+    } catch (error) {
+      if (error instanceof MeshingError) throw error;
+      throw new MeshingError(
+        `Unable to prepare private STEP input: ${String(error)}`,
+      );
+    }
+    const copiedInputStep = await Deno.readFile(stableInputPath);
+    const inputStepSha256 = await sha256Hex(copiedInputStep);
+    const geoText = buildGeoScript({ ...options, stepPath: "input.step" });
+    await Deno.writeTextFile(geoPath, geoText);
 
-  if (!success) {
-    const log = new TextDecoder().decode(stdout) +
-      new TextDecoder().decode(stderr);
-    throw new MeshingError(
-      `gmsh failed (killed after ${options.timeoutMs}ms, or meshing error): ${
-        log.slice(-800)
-      }`,
-    );
-  }
+    let child;
+    try {
+      child = new Deno.Command("gmsh", {
+        args: ["mesh.geo", "-3", "-format", "inp", "-o", "mesh.inp"],
+        cwd: workDir,
+        stdout: "piped",
+        stderr: "piped",
+      }).spawn();
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) throw new GmshNotFoundError();
+      throw error;
+    }
 
-  let raw;
-  try {
-    raw = await Deno.readTextFile(inpPath);
-  } catch {
-    throw new MeshingError("gmsh reported success but wrote no mesh file.");
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch { /* already exited */ }
+    }, options.timeoutMs);
+    let output: Deno.CommandOutput;
+    try {
+      output = await child.output();
+    } finally {
+      clearTimeout(timer);
+    }
+    const diagnostics = new TextDecoder().decode(output.stdout) +
+      new TextDecoder().decode(output.stderr);
+
+    if (!output.success) {
+      throw new MeshingError(
+        `gmsh failed (killed after ${options.timeoutMs}ms, or meshing error): ${
+          diagnostics.slice(-800)
+        }`,
+      );
+    }
+
+    let raw: string;
+    try {
+      raw = await Deno.readTextFile(inpPath);
+    } catch {
+      throw new MeshingError("gmsh reported success but wrote no mesh file.");
+    }
+
+    const inpText = cleanInp(raw);
+    const inspection = inspectInp(inpText);
+
+    for (const selection of options.selections) {
+      const count = inspection.nodesPerSet[selection.name] ?? 0;
+      if (count === 0) {
+        throw new MeshingError(
+          `Selection '${selection.name}' matched no surface — its NSET is ` +
+            `empty. Check the box against the part's bounding box ` +
+            `(build123d_execute reports it), and remember coordinates are in mm.`,
+        );
+      }
+    }
+
+    return {
+      mesh: { inpText, ...inspection },
+      artifacts: {
+        geoText,
+        inputStepSha256,
+        inputStepBytes: copiedInputStep.length,
+        diagnostics,
+        cleanedInpText: inpText,
+      },
+    };
   } finally {
     await Deno.remove(workDir, { recursive: true }).catch(() => {});
   }
+}
 
-  const inpText = cleanInp(raw);
-  const inspection = inspectInp(inpText);
-
-  for (const selection of options.selections) {
-    const count = inspection.nodesPerSet[selection.name] ?? 0;
-    if (count === 0) {
-      throw new MeshingError(
-        `Selection '${selection.name}' matched no surface — its NSET is ` +
-          `empty. Check the box against the part's bounding box ` +
-          `(build123d_execute reports it), and remember coordinates are in mm.`,
-      );
-    }
-  }
-
-  return { inpText, ...inspection };
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", Uint8Array.from(bytes));
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

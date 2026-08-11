@@ -11,7 +11,7 @@ const META = {
   "io.modelcontextprotocol/clientCapabilities": {},
   "io.modelcontextprotocol/clientInfo": {
     name: "mcp-calculix-test",
-    version: "0.5.0",
+    version: "0.6.0",
   },
 };
 
@@ -62,7 +62,7 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.5.0",
+      version: "0.6.0",
     });
 
     const listed = await rpc(url, "tools/list");
@@ -110,9 +110,9 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
 });
 
 Deno.test("CalculiX viewer resolves and serves the exact published JSR resource", async () => {
-  const moduleUrl = "https://jsr.io/@casys/mcp-calculix/0.2.0/server.ts";
+  const moduleUrl = "https://jsr.io/@casys/mcp-calculix/0.6.0/server.ts";
   const viewerUrl =
-    "https://jsr.io/@casys/mcp-calculix/0.2.0/src/ui/dist/results-viewer/index.html";
+    "https://jsr.io/@casys/mcp-calculix/0.6.0/src/ui/dist/results-viewer/index.html";
   const html = "<!doctype html><title>Remote CalculiX results</title>";
   const { app, hasResultsViewer } = createCalculixServer({
     logger: () => {},

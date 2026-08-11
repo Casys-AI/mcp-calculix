@@ -1,12 +1,20 @@
 export interface StaticSolveResult extends Record<string, unknown> {
   schemaVersion: "2.0";
-  kind: "static-solve";
-  inputArtifact: {
-    path: string;
-    sourcePath: string;
-    sha256: string;
-    bytes: number;
-  };
+  kind: "static-solve" | "static-solve-recorded";
+  inputArtifact:
+    | {
+      path: string;
+      sourcePath: string;
+      sha256: string;
+      bytes: number;
+    }
+    | {
+      uri: string;
+      mimeType: "model/step";
+      sha256: string;
+      bytes: number;
+    };
+  run?: Record<string, unknown>;
   mesh: {
     nodes: number;
     elements: number;
@@ -35,11 +43,15 @@ export type DisplayState =
 
 export function parseStaticSolve(value: unknown): StaticSolveResult {
   const root = record(value, "structuredContent");
-  if (root.schemaVersion !== "2.0" || root.kind !== "static-solve") {
+  if (
+    root.schemaVersion !== "2.0" ||
+    (root.kind !== "static-solve" && root.kind !== "static-solve-recorded")
+  ) {
     throw new TypeError(
-      "Expected a static-solve result with schemaVersion 2.0.",
+      "Expected a static-solve or static-solve-recorded result with schemaVersion 2.0.",
     );
   }
+  const kind = root.kind;
   const inputArtifact = record(root.inputArtifact, "inputArtifact");
   const mesh = record(root.mesh, "mesh");
   const constraints = record(root.constraints, "constraints");
@@ -51,16 +63,30 @@ export function parseStaticSolve(value: unknown): StaticSolveResult {
   const maxVonMises = record(metrics.maxVonMises, "metrics.maxVonMises");
   return {
     schemaVersion: "2.0",
-    kind: "static-solve",
-    inputArtifact: {
-      path: nonEmptyString(inputArtifact.path, "inputArtifact.path"),
-      sourcePath: nonEmptyString(
-        inputArtifact.sourcePath,
-        "inputArtifact.sourcePath",
-      ),
-      sha256: sha256(inputArtifact.sha256, "inputArtifact.sha256"),
-      bytes: positiveInteger(inputArtifact.bytes, "inputArtifact.bytes"),
-    },
+    kind,
+    inputArtifact: kind === "static-solve"
+      ? {
+        path: nonEmptyString(inputArtifact.path, "inputArtifact.path"),
+        sourcePath: nonEmptyString(
+          inputArtifact.sourcePath,
+          "inputArtifact.sourcePath",
+        ),
+        sha256: sha256(inputArtifact.sha256, "inputArtifact.sha256"),
+        bytes: positiveInteger(inputArtifact.bytes, "inputArtifact.bytes"),
+      }
+      : {
+        uri: recordedStepUri(inputArtifact.uri),
+        mimeType: literal(
+          inputArtifact.mimeType,
+          "model/step",
+          "inputArtifact.mimeType",
+        ),
+        sha256: sha256(inputArtifact.sha256, "inputArtifact.sha256"),
+        bytes: positiveInteger(inputArtifact.bytes, "inputArtifact.bytes"),
+      },
+    ...(kind === "static-solve-recorded"
+      ? { run: record(root.run, "run") }
+      : {}),
     mesh: {
       nodes: positiveInteger(mesh.nodes, "mesh.nodes"),
       elements: positiveInteger(mesh.elements, "mesh.elements"),
@@ -109,6 +135,18 @@ export function parseStaticSolve(value: unknown): StaticSolveResult {
       },
     },
   };
+}
+
+function recordedStepUri(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^casys:\/\/calculix\/runs\/r-[0-9a-f-]{36}\/input\.step$/.test(value)
+  ) {
+    throw new TypeError(
+      "inputArtifact.uri must identify a recorded input.step.",
+    );
+  }
+  return value;
 }
 
 function sha256(value: unknown, name: string): string {

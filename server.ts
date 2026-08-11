@@ -1,10 +1,16 @@
 /** Stateless HTTP MCP server for deterministic CalculiX static solves. */
 
-import { McpApp, type RegisterViewersSummary } from "@casys/mcp-server";
+import {
+  McpApp,
+  type MCPResource,
+  type RegisterViewersSummary,
+  type ResourceHandler,
+} from "@casys/mcp-server";
 import { CalculixToolsClient } from "./src/client.ts";
+import { CalculixRunStore, type RecordedStaticRun } from "./src/runs.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 
@@ -14,6 +20,11 @@ export interface CreateCalculixServerOptions {
   logger?: (message: string) => void;
   viewerFileSystem?: CalculixResultsViewerFileSystem;
   viewerModuleUrl?: string;
+  /** Durable, bounded evidence directory for recorded static solves. */
+  runsDirectory?: string;
+  maxRecordedRuns?: number;
+  /** Advanced integration seam; production normally configures the directory. */
+  runStore?: CalculixRunStore;
 }
 
 export interface CalculixResultsViewerFileSystem {
@@ -23,13 +34,26 @@ export interface CalculixResultsViewerFileSystem {
 
 export function createCalculixServer(
   options: CreateCalculixServerOptions = {},
-): { app: McpApp; hasResultsViewer: boolean } {
-  const client = new CalculixToolsClient();
-  const handlers = client.buildHandlersMap();
+): {
+  app: McpApp;
+  hasResultsViewer: boolean;
+  runStore: CalculixRunStore;
+  toolsClient: CalculixToolsClient;
+} {
+  const runStore = options.runStore ?? new CalculixRunStore({
+    runsDirectory: options.runsDirectory ?? env("CALCULIX_RUNS_DIRECTORY"),
+    maxRuns: options.maxRecordedRuns ?? positiveIntegerEnv(
+      "CALCULIX_MAX_RECORDED_RUNS",
+    ),
+  });
+  const toolsClient = new CalculixToolsClient({ runStore });
+  const handlers = toolsClient.buildHandlersMap();
   if (options.solveHandler) {
     handlers.set("calculix_solve_static", options.solveHandler);
   }
 
+  const logger = options.logger ??
+    ((message: string) => console.error(`[mcp-calculix] ${message}`));
   const app = new McpApp({
     name: "mcp-calculix",
     version: VERSION,
@@ -37,12 +61,36 @@ export function createCalculixServer(
     maxConcurrent: 4,
     backpressureStrategy: "queue",
     validateSchema: true,
+    // Run evidence is registered both from the durable ledger at boot and
+    // immediately after a successful solve, including after startHttp().
+    expectResources: true,
     instructions:
       "Deterministic finite-element static solves. Results report mesh and physical observations only; no requirement verdict is produced.",
-    logger: options.logger ??
-      ((message) => console.error(`[mcp-calculix] ${message}`)),
+    logger,
   });
-  app.registerTools(client.toMCPFormat(), handlers);
+  app.registerTools(toolsClient.toMCPFormat(), handlers);
+  for (const run of runStore.list()) {
+    registerRecordedRunResources(app, runStore, run);
+  }
+  runStore.setLifecycleCallbacks({
+    onRecord: (run) => {
+      try {
+        registerRecordedRunResources(app, runStore, run);
+      } catch (error) {
+        logger(
+          `[WARN] Durable run ${run.runId} committed, but its MCP resources were not published; calculix_run_get or an exact retry will retry publication: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        throw error;
+      }
+    },
+    onEvict: (run) => {
+      for (const artifact of run.artifacts) {
+        app.unregisterResource(artifact.uri);
+      }
+    },
+  });
   const viewerRegistration = registerCalculixResultsViewer(
     app,
     options.viewerFileSystem,
@@ -51,7 +99,40 @@ export function createCalculixServer(
   const hasResultsViewer = viewerRegistration.registered.includes(
     "results-viewer",
   );
-  return { app, hasResultsViewer };
+  return { app, hasResultsViewer, runStore, toolsClient };
+}
+
+function registerRecordedRunResources(
+  app: McpApp,
+  runStore: CalculixRunStore,
+  run: RecordedStaticRun,
+): void {
+  const resources: MCPResource[] = [];
+  const handlers = new Map<string, ResourceHandler>();
+  for (const artifact of run.artifacts) {
+    if (app.hasResource(artifact.uri)) continue;
+    // Re-open and verify every artifact before exposing any URI from the run.
+    runStore.readArtifactSync(artifact.uri);
+    const uri = artifact.uri;
+    resources.push({
+      uri: artifact.uri,
+      name: `CalculiX ${run.runId} ${artifact.name}`,
+      description:
+        `Exact ${artifact.name} from recorded CalculiX static run ${run.runId}; ` +
+        `sha256:${artifact.sha256}, ${artifact.bytes} bytes.`,
+      mimeType: artifact.mimeType,
+      size: artifact.bytes,
+    });
+    handlers.set(uri, async (requested) => {
+      if (requested.toString() !== uri) {
+        throw new Error(
+          "Requested URI does not match its registered artifact.",
+        );
+      }
+      return await runStore.readArtifact(uri);
+    });
+  }
+  if (resources.length > 0) app.registerResources(resources, handlers);
 }
 
 /** Register the optional built result viewer from a checkout or JSR package. */
@@ -174,6 +255,16 @@ function positivePort(value: string | undefined, name: string): number {
 function integerEnv(name: string): number | undefined {
   const value = env(name);
   return value === undefined ? undefined : positivePort(value, name);
+}
+
+function positiveIntegerEnv(name: string): number | undefined {
+  const value = env(name);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return parsed;
 }
 
 function nonEmpty(value: string | undefined, name: string): string {

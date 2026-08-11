@@ -193,7 +193,15 @@ export function parseDat(datText: string): SolveResult {
  *
  * Private — callers use the typed wrappers below.
  */
-async function runCcxRaw(deck: string, timeoutMs: number): Promise<string> {
+interface CcxRawResult {
+  datText: string;
+  diagnostics: string;
+}
+
+async function runCcxRaw(
+  deck: string,
+  timeoutMs: number,
+): Promise<CcxRawResult> {
   const workDir = await Deno.makeTempDir({ prefix: "calculix-solve-" });
   await Deno.writeTextFile(`${workDir}/job.inp`, deck);
 
@@ -237,7 +245,7 @@ async function runCcxRaw(deck: string, timeoutMs: number): Promise<string> {
     } catch {
       throw new SolveError("CalculiX finished but wrote no .dat result file.");
     }
-    return datText;
+    return { datText, diagnostics: log };
   } finally {
     await Deno.remove(workDir, { recursive: true }).catch(() => {});
   }
@@ -248,7 +256,24 @@ export async function solveDeck(
   deck: string,
   timeoutMs: number,
 ): Promise<SolveResult> {
-  return parseDat(await runCcxRaw(deck, timeoutMs));
+  return parseDat((await runCcxRaw(deck, timeoutMs)).datText);
+}
+
+/**
+ * Run a static deck while retaining the exact textual evidence emitted by
+ * CalculiX.  The caller owns durable storage and is deliberately responsible
+ * for deciding whether a result is publishable.
+ */
+export async function solveDeckRecorded(
+  deck: string,
+  timeoutMs: number,
+): Promise<{ result: SolveResult; datText: string; diagnostics: string }> {
+  const raw = await runCcxRaw(deck, timeoutMs);
+  return {
+    result: parseDat(raw.datText),
+    datText: raw.datText,
+    diagnostics: raw.diagnostics,
+  };
 }
 
 // ── Modal (*FREQUENCY) ────────────────────────────────────────────────────────
@@ -417,7 +442,7 @@ export async function solveModalDeck(
   deck: string,
   timeoutMs: number,
 ): Promise<ModalResult> {
-  return parseModalDat(await runCcxRaw(deck, timeoutMs));
+  return parseModalDat((await runCcxRaw(deck, timeoutMs)).datText);
 }
 
 // ── Buckling (*BUCKLE) ────────────────────────────────────────────────────────
@@ -585,7 +610,7 @@ export async function solveBuckleDeck(
   deck: string,
   timeoutMs: number,
 ): Promise<BuckleResult> {
-  return parseBuckleDat(await runCcxRaw(deck, timeoutMs));
+  return parseBuckleDat((await runCcxRaw(deck, timeoutMs)).datText);
 }
 
 // ── Creep (*VISCO + Norton law) ───────────────────────────────────────────────
@@ -759,7 +784,7 @@ export async function solveCreepDeck(
   deck: string,
   timeoutMs: number,
 ): Promise<SolveResult> {
-  return parseDatLastIncrement(await runCcxRaw(deck, timeoutMs));
+  return parseDatLastIncrement((await runCcxRaw(deck, timeoutMs)).datText);
 }
 
 // ── Coupled temperature-displacement (*COUPLED TEMPERATURE-DISPLACEMENT) ──────
@@ -1027,5 +1052,5 @@ export async function solveCoupledThermalDeck(
   deck: string,
   timeoutMs: number,
 ): Promise<CoupledThermalResult> {
-  return parseCoupledThermalDat(await runCcxRaw(deck, timeoutMs));
+  return parseCoupledThermalDat((await runCcxRaw(deck, timeoutMs)).datText);
 }

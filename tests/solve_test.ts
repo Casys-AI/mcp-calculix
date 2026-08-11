@@ -10,8 +10,10 @@ import { buildDeck, parseDat, SolveError } from "../src/api/ccx.ts";
 import {
   buildGeoScript,
   cleanInp,
+  GmshNotFoundError,
   MeshingError,
   meshStep,
+  meshStepRecorded,
   validateSetName,
 } from "../src/api/gmsh.ts";
 import {
@@ -192,6 +194,42 @@ Deno.test("calculix_solve_static rejects a STEP digest mismatch before meshing",
     InputArtifactError,
     "STEP SHA-256 mismatch",
   );
+});
+
+Deno.test("meshStepRecorded removes its private work directory when gmsh is absent", async () => {
+  const root = await Deno.makeTempDir({ prefix: "calculix-gmsh-absent-" });
+  const runtimeTemp = `${root}/tmp`;
+  const emptyPath = `${root}/empty-path`;
+  const stepPath = `${root}/input.step`;
+  await Deno.mkdir(runtimeTemp);
+  await Deno.mkdir(emptyPath);
+  await Deno.writeTextFile(stepPath, "ISO-10303-21;\nEND-ISO-10303-21;\n");
+  const previousPath = Deno.env.get("PATH");
+  const previousTemp = Deno.env.get("TMPDIR");
+  try {
+    Deno.env.set("PATH", emptyPath);
+    Deno.env.set("TMPDIR", runtimeTemp);
+    await assertRejects(
+      () =>
+        meshStepRecorded({
+          stepPath,
+          selections: [
+            { name: "FACE", box: { min: [0, 0, 0], max: [1, 1, 1] } },
+          ],
+          meshSizeMm: 1,
+          elementOrder: 1,
+          timeoutMs: 1_000,
+        }),
+      GmshNotFoundError,
+    );
+    assertEquals([...Deno.readDirSync(runtimeTemp)], []);
+  } finally {
+    if (previousPath === undefined) Deno.env.delete("PATH");
+    else Deno.env.set("PATH", previousPath);
+    if (previousTemp === undefined) Deno.env.delete("TMPDIR");
+    else Deno.env.set("TMPDIR", previousTemp);
+    await Deno.remove(root, { recursive: true });
+  }
 });
 
 // ── Unit: pure text stages ──────────────────────────────────────────────────

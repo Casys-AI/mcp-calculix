@@ -10,6 +10,8 @@ export type {
   CalculixToolHandler,
 } from "./types.ts";
 export { solveTools } from "./solve.ts";
+export { createRecordedStaticTools } from "./solve.ts";
+export type { RecordedStaticToolDependencies } from "./solve.ts";
 export { modalTools } from "./modal.ts";
 export { buckleTools } from "./buckling.ts";
 export { creepTools } from "./creep.ts";
@@ -20,7 +22,9 @@ import { coupledThermalTools } from "./coupled_thermal.ts";
 import { creepTools } from "./creep.ts";
 import { modalTools } from "./modal.ts";
 import { solveTools } from "./solve.ts";
+import { createRecordedStaticTools } from "./solve.ts";
 import type { CalculixTool } from "./types.ts";
+import type { CalculixRunStore } from "../runs.ts";
 
 /** All CalculiX tools combined */
 export const allTools: CalculixTool[] = [
@@ -30,6 +34,13 @@ export const allTools: CalculixTool[] = [
   ...creepTools,
   ...coupledThermalTools,
 ];
+
+/** Build the server tool surface, optionally including durable static runs. */
+export function createAllTools(runStore?: CalculixRunStore): CalculixTool[] {
+  return runStore
+    ? [...allTools, ...createRecordedStaticTools(runStore)]
+    : allTools;
+}
 
 /** Tools organized by category */
 export const toolsByCategory: Record<string, CalculixTool[]> = {

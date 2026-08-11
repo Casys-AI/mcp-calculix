@@ -139,8 +139,12 @@ const ExtremaDetails = ({ data }: CalculixComponentProps) => (
       items={[
         {
           id: "input-source",
-          label: "STEP source",
-          value: data.inputArtifact.sourcePath,
+          label: "sourcePath" in data.inputArtifact
+            ? "STEP source"
+            : "STEP resource",
+          value: "sourcePath" in data.inputArtifact
+            ? data.inputArtifact.sourcePath
+            : data.inputArtifact.uri,
         },
         {
           id: "input-sha256",

@@ -90,11 +90,13 @@ Deno.test(
       const names = (listed.tools as { name: string }[]).map((t) => t.name)
         .sort();
       assertEquals(names, [
+        "calculix_run_get",
         "calculix_solve_buckling",
         "calculix_solve_coupled_thermal",
         "calculix_solve_creep",
         "calculix_solve_modal",
         "calculix_solve_static",
+        "calculix_solve_static_recorded",
       ]);
     } finally {
       await writer.close();

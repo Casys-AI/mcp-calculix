@@ -1,5 +1,8 @@
 node_modules/
 
+# Runtime evidence and lock state are persisted outside source control.
+state/
+
 # Credentials — never commit credentials
 .env
 .env.*

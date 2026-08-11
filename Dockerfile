@@ -32,7 +32,7 @@ COPY deno.json deno.lock ./
 # pinned lock file. @casys/mcp-server pulls in hono, ajv, jose, otel, std/yaml
 # transitively; the remaining specifiers cover std and test-only packages.
 RUN deno cache --frozen \
-      "jsr:@casys/mcp-server@0.24.1" \
+      "jsr:@casys/mcp-server@0.26.0" \
       "npm:ajv@^8.17.1" \
       "npm:hono@^4" \
       "npm:hono@^4/cors" \

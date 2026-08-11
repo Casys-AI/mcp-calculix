@@ -8,11 +8,13 @@
 
 import {
   allTools,
+  createAllTools,
   getCategories,
   getToolByName,
   getToolsByCategory,
   toolsByCategory,
 } from "./tools/mod.ts";
+import type { CalculixRunStore } from "./runs.ts";
 import type {
   CalculixTool,
   CalculixToolCategory,
@@ -40,15 +42,19 @@ export interface MCPToolWireFormat {
 
 export interface CalculixToolsClientOptions {
   categories?: string[];
+  runStore?: CalculixRunStore;
 }
 
 export class CalculixToolsClient {
   private tools: CalculixTool[];
 
   constructor(options?: CalculixToolsClientOptions) {
-    this.tools = options?.categories
-      ? options.categories.flatMap((cat) => getToolsByCategory(cat))
+    const tools = options?.runStore
+      ? createAllTools(options.runStore)
       : allTools;
+    this.tools = options?.categories
+      ? tools.filter((tool) => options.categories?.includes(tool.category))
+      : tools;
   }
 
   listTools(): CalculixTool[] {

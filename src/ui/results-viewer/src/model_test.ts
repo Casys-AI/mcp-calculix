@@ -62,6 +62,31 @@ Deno.test("results viewer parses exactly the static-solve v2 result", () => {
   );
 });
 
+Deno.test("results viewer accepts the recorded successor without inventing a filesystem path", () => {
+  const recorded: StaticSolveResult = {
+    ...result,
+    kind: "static-solve-recorded",
+    inputArtifact: {
+      uri:
+        "casys://calculix/runs/r-00000000-0000-4000-8000-000000000000/input.step",
+      mimeType: "model/step",
+      sha256: "b".repeat(64),
+      bytes: 4256,
+    },
+    run: { schemaVersion: "2.0", state: "completed" },
+  };
+  assertEquals(parseStaticSolve(recorded), recorded);
+  assertThrows(
+    () =>
+      parseStaticSolve({
+        ...recorded,
+        inputArtifact: { ...recorded.inputArtifact, mimeType: "text/plain" },
+      }),
+    TypeError,
+    "model/step",
+  );
+});
+
 Deno.test("results viewer keeps safe error fallbacks", () => {
   assertEquals(
     toolErrorMessage({

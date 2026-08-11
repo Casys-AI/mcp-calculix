@@ -8,6 +8,8 @@
 
 export const STATIC_SOLVE_SCHEMA_VERSION = "2.0";
 export const STATIC_SOLVE_KIND = "static-solve";
+export const STATIC_SOLVE_RECORDED_SCHEMA_VERSION = "2.0";
+export const STATIC_SOLVE_RECORDED_KIND = "static-solve-recorded";
 
 export interface StaticSolveResult {
   schemaVersion: typeof STATIC_SOLVE_SCHEMA_VERSION;
@@ -145,6 +147,246 @@ export const STATIC_SOLVE_OUTPUT_SCHEMA = {
         },
       },
     },
+  },
+} as const;
+
+/**
+ * Successor contract for a static solve with durable, content-attested run
+ * evidence.  The original 2.0 contract remains frozen for existing clients.
+ */
+const RECORDED_RUN_ID_PATTERN =
+  "^r-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
+const RECORDED_DIGEST_PATTERN = "^[a-f0-9]{64}$";
+const RECORDED_ARTIFACT_URI_PREFIX =
+  "^casys://calculix/runs/r-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/";
+
+export const RECORDED_INPUT_ARTIFACT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["uri", "mimeType", "sha256", "bytes"],
+  properties: {
+    uri: {
+      type: "string",
+      pattern: `${RECORDED_ARTIFACT_URI_PREFIX}input\\.step$`,
+    },
+    mimeType: { const: "model/step" },
+    sha256: { type: "string", pattern: RECORDED_DIGEST_PATTERN },
+    bytes: { type: "integer", minimum: 1 },
+  },
+} as const;
+
+function recordedArtifactSchema(
+  name: string,
+  mimeType: string,
+  minimumBytes = 0,
+): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "uri", "mimeType", "bytes", "sha256"],
+    properties: {
+      name: { const: name },
+      uri: {
+        type: "string",
+        pattern: `${RECORDED_ARTIFACT_URI_PREFIX}${name.replace(".", "\\.")}$`,
+      },
+      mimeType: { const: mimeType },
+      bytes: { type: "integer", minimum: minimumBytes },
+      sha256: { type: "string", pattern: RECORDED_DIGEST_PATTERN },
+    },
+  } as const;
+}
+
+const RECORDED_ARTIFACTS_SCHEMA: Record<string, unknown> = {
+  type: "array",
+  minItems: 9,
+  maxItems: 9,
+  prefixItems: [
+    recordedArtifactSchema("input.step", "model/step", 1),
+    recordedArtifactSchema("request.json", "application/json"),
+    recordedArtifactSchema("mesh.geo", "text/plain"),
+    recordedArtifactSchema("mesh.inp", "text/plain"),
+    recordedArtifactSchema("gmsh.log", "text/plain"),
+    recordedArtifactSchema("job.inp", "text/plain"),
+    recordedArtifactSchema("ccx.log", "text/plain"),
+    recordedArtifactSchema("job.dat", "text/plain"),
+    recordedArtifactSchema("result.json", "application/json"),
+  ],
+  items: false,
+} as const;
+
+export const RECORDED_STATIC_RUN_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "schemaVersion",
+    "state",
+    "runId",
+    "requestId",
+    "requestSha256",
+    "inputArtifact",
+    "createdAt",
+    "artifacts",
+  ],
+  properties: {
+    schemaVersion: { const: "2.0" },
+    state: { const: "completed" },
+    runId: { type: "string", pattern: RECORDED_RUN_ID_PATTERN },
+    requestId: {
+      type: "string",
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+    },
+    requestSha256: { type: "string", pattern: RECORDED_DIGEST_PATTERN },
+    inputArtifact: RECORDED_INPUT_ARTIFACT_SCHEMA,
+    createdAt: {
+      type: "string",
+      pattern:
+        "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+    },
+    artifacts: RECORDED_ARTIFACTS_SCHEMA,
+  },
+} as const;
+
+const RECORDED_RUN_LOOKUP_SCHEMA = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "value"],
+      properties: {
+        kind: { const: "run_id" },
+        value: { type: "string", pattern: RECORDED_RUN_ID_PATTERN },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "value"],
+      properties: {
+        kind: { const: "request_id" },
+        value: {
+          type: "string",
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        },
+      },
+    },
+  ],
+} as const;
+
+/** Closed recovery state union; unavailable states deliberately carry no run. */
+export const RECORDED_STATIC_RUN_GET_OUTPUT_SCHEMA = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "schemaVersion",
+        "status",
+        "lookup",
+        "requestId",
+        "runId",
+        "run",
+      ],
+      properties: {
+        schemaVersion: { const: "1.0" },
+        status: { const: "completed" },
+        lookup: RECORDED_RUN_LOOKUP_SCHEMA,
+        requestId: {
+          type: "string",
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        },
+        runId: { type: "string", pattern: RECORDED_RUN_ID_PATTERN },
+        run: RECORDED_STATIC_RUN_OUTPUT_SCHEMA,
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "schemaVersion",
+        "status",
+        "lookup",
+        "requestId",
+        "runId",
+        "reason",
+      ],
+      properties: {
+        schemaVersion: { const: "1.0" },
+        status: { enum: ["dispatched", "quarantined", "evicted"] },
+        lookup: RECORDED_RUN_LOOKUP_SCHEMA,
+        requestId: {
+          type: "string",
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        },
+        runId: { type: "string", pattern: RECORDED_RUN_ID_PATTERN },
+        reason: { type: ["string", "null"] },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["schemaVersion", "status", "lookup"],
+      properties: {
+        schemaVersion: { const: "1.0" },
+        status: { const: "not_found" },
+        lookup: RECORDED_RUN_LOOKUP_SCHEMA,
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "schemaVersion",
+        "status",
+        "lookup",
+        "requestId",
+        "reason",
+      ],
+      properties: {
+        schemaVersion: { const: "1.0" },
+        status: { const: "outcome_unknown" },
+        lookup: {
+          type: "object",
+          additionalProperties: false,
+          required: ["kind", "value"],
+          properties: {
+            kind: { const: "request_id" },
+            value: {
+              type: "string",
+              pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            },
+          },
+        },
+        requestId: {
+          type: "string",
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        },
+        reason: { type: "string", minLength: 1 },
+      },
+    },
+  ],
+} as const;
+
+export const STATIC_SOLVE_RECORDED_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "schemaVersion",
+    "kind",
+    "inputArtifact",
+    "mesh",
+    "constraints",
+    "metrics",
+    "run",
+  ],
+  properties: {
+    schemaVersion: { const: STATIC_SOLVE_RECORDED_SCHEMA_VERSION },
+    kind: { const: STATIC_SOLVE_RECORDED_KIND },
+    inputArtifact: RECORDED_INPUT_ARTIFACT_SCHEMA,
+    mesh: STATIC_SOLVE_OUTPUT_SCHEMA.properties.mesh,
+    constraints: STATIC_SOLVE_OUTPUT_SCHEMA.properties.constraints,
+    metrics: STATIC_SOLVE_OUTPUT_SCHEMA.properties.metrics,
+    run: RECORDED_STATIC_RUN_OUTPUT_SCHEMA,
   },
 } as const;
 
