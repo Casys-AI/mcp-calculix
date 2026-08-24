@@ -27,16 +27,14 @@ observations, never a safety, compliance, or requirement verdict.
 
 ## Quick start
 
-The published container is `ghcr.io/casys-ai/mcp-calculix:0.7.0`. It includes
-Deno 2.9.4, Gmsh 4.12, CalculiX 2.21, the 0.7.0 server, and the results viewer.
-Images exist for `linux/amd64` and `linux/arm64`. This 0.7.1 release
-preparation does not publish a 0.7.1 image; Docker examples intentionally
-remain the known published 0.7.0 tag. The source checkout can be run now. The
-prepared JSR `@0.7.1` commands below become usable after that package is
-published.
+The published 0.7.1 multi-architecture image is addressed by
+`ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6`.
+It includes Deno 2.9.4, Gmsh 4.12, CalculiX 2.21, the 0.7.1 server, and the
+results viewer. Images exist for `linux/amd64` and `linux/arm64`. The examples
+deliberately pin that immutable digest.
 
 ```bash
-docker pull ghcr.io/casys-ai/mcp-calculix:0.7.0
+docker pull ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6
 ```
 
 ### stdio for desktop and classic MCP clients
@@ -61,7 +59,7 @@ STEP files that the tools may read:
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "ghcr.io/casys-ai/mcp-calculix:0.7.0",
+        "ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6",
         "stdio"
       ]
     }
@@ -90,7 +88,7 @@ docker run --rm --name mcp-calculix \
   -v /absolute/path/to/step-files:/inputs:ro \
   -v calculix-runs:/var/lib/mcp-calculix-runs \
   -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix:0.7.0 http
+  ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6 http
 ```
 
 The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
@@ -118,13 +116,13 @@ apt install gmsh calculix-ccx     # Debian/Ubuntu
 brew install deno gmsh calculix   # macOS/Homebrew
 ```
 
-After this package is published, it can be run from JSR:
+Run the published package from JSR:
 
 ```bash
 deno run --allow-all jsr:@casys/mcp-calculix@0.7.1/server --port=3015
 ```
 
-From a checkout, it can be run now:
+From a checkout:
 
 ```bash
 deno task build:ui
@@ -136,9 +134,8 @@ configure that entry point; `MCP_PORT` and `MCP_HOSTNAME` supply the same values
 when the corresponding CLI option is absent. Missing `gmsh` or `ccx` binaries
 produce an install-oriented error before a result can be returned.
 
-After this package is published, the JSR export also exposes the tool
-definitions, strict result schemas, deck builders, parsers, and recorded-run
-store for Deno applications:
+The JSR export also exposes the tool definitions, strict result schemas, deck
+builders, parsers, and recorded-run store for Deno applications:
 
 ```bash
 deno add jsr:@casys/mcp-calculix@0.7.1
