@@ -195,6 +195,98 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
   return { nodeCount, elementCount, maxNodeId, nodesPerSet };
 }
 
+/**
+ * Collect actual node IDs from cleaned Abaqus *NSET blocks.
+ *
+ * Supports wrapped comma-separated lists and `GENERATE` form, where each
+ * non-empty data line is one independent `start, end[, increment]` range.
+ * Duplicate *NSET headers for the same name are unioned. Keywords and
+ * names are matched case-insensitively; returned keys are uppercase.
+ * Independent from `inspectInp` token counting.
+ */
+export function parseNsetNodeIds(
+  inpText: string,
+): Record<string, Set<number>> {
+  const sets: Record<string, Set<number>> = {};
+  let current: { name: string; generate: boolean } | null = null;
+
+  for (const rawLine of inpText.split("\n")) {
+    const line = rawLine.trim();
+    if (line.startsWith("*")) {
+      if (/^\*nset\b/i.test(line)) {
+        const rawName = line.match(/nset\s*=\s*([A-Za-z][A-Za-z0-9_]*)/i)?.[1];
+        if (!rawName) {
+          current = null;
+          continue;
+        }
+        const name = rawName.toUpperCase();
+        current = { name, generate: /\bGENERATE\b/i.test(line) };
+        sets[name] = sets[name] ?? new Set<number>();
+      } else {
+        current = null;
+      }
+      continue;
+    }
+    if (!current || !line || line.startsWith("**")) continue;
+    const numbers = line.split(",").map((token) => token.trim()).filter(
+      Boolean,
+    ).map(Number);
+    if (current.generate) {
+      applyGenerateRange(sets, current.name, numbers);
+      continue;
+    }
+    for (const id of numbers) {
+      if (!Number.isSafeInteger(id) || id < 1) {
+        throw new Error(
+          `NSET '${current.name}' contains an invalid node id.`,
+        );
+      }
+      sets[current.name].add(id);
+    }
+  }
+  return sets;
+}
+
+function applyGenerateRange(
+  sets: Record<string, Set<number>>,
+  name: string,
+  values: number[],
+): void {
+  if (values.length !== 2 && values.length !== 3) {
+    throw new Error(
+      `NSET '${name}' GENERATE form requires start, end[, increment].`,
+    );
+  }
+  const start = values[0];
+  const end = values[1];
+  const step = values[2] ?? 1;
+  if (
+    !Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+    !Number.isSafeInteger(step) || step === 0
+  ) {
+    throw new Error(`NSET '${name}' GENERATE bounds are invalid.`);
+  }
+  const ids = sets[name] ?? new Set<number>();
+  const ascending = step > 0;
+  if ((ascending && start > end) || (!ascending && start < end)) {
+    sets[name] = ids;
+    return;
+  }
+  for (
+    let id = start;
+    ascending ? id <= end : id >= end;
+    id += step
+  ) {
+    if (id < 1) {
+      throw new Error(
+        `NSET '${name}' GENERATE produced a non-positive node id.`,
+      );
+    }
+    ids.add(id);
+  }
+  sets[name] = ids;
+}
+
 /** Run Gmsh on a STEP file and return the cleaned mesh. */
 export async function meshStep(options: MeshOptions): Promise<MeshResult> {
   return (await meshStepRecorded(options)).mesh;

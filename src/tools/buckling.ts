@@ -1,7 +1,7 @@
 /**
  * CalculiX buckling (linear eigenvalue) solve tool
  *
- * One tool, two-step deterministic pipeline: STEP → Gmsh mesh →
+ * Two-step deterministic pipeline: STEP → Gmsh mesh →
  * CalculiX *STATIC (builds geometric stiffness) → *BUCKLE (finds critical
  * load factors).
  *
@@ -15,11 +15,17 @@
  */
 
 import type { CalculixTool } from "./types.ts";
-import { type FaceSelection, meshStep } from "../api/gmsh.ts";
 import {
+  parseOrdinarySolveArgs,
+  tightenCommonOrdinaryInputSchema,
+} from "./ordinary-preflight.ts";
+import { meshStep } from "../api/gmsh.ts";
+import {
+  assertMechanicalFixedAndLoadNodeDisjoint,
   buildBuckleDeck,
   type NodalLoad,
   solveBuckleDeck,
+  SolveError,
 } from "../api/ccx.ts";
 import { snapshotStepArtifact } from "../api/input-artifact.ts";
 import {
@@ -186,47 +192,51 @@ export const buckleTools: CalculixTool[] = [
       ],
     },
     handler: async (args) => {
-      const selections = args.selections as FaceSelection[];
-      const fixed = args.fixed as string[];
-      const loads = args.loads as Array<
-        { selection: string; force_n: [number, number, number] }
-      >;
-      const timeoutMs = (args.timeout_ms as number) ?? 120_000;
+      const {
+        stepPath,
+        expectedStepSha256,
+        meshSizeMm,
+        elementOrder,
+        timeoutMs,
+        material,
+        selections,
+        fixed,
+        loads,
+      } = parseOrdinarySolveArgs(args, {
+        toolName: "calculix_solve_buckling",
+        loads: "required",
+      });
       const nModes = (args.n_modes as number) ?? 2;
 
-      // Validate selection references before any subprocess runs.
-      const known = new Set(selections.map((s) => s.name));
-      for (const name of [...fixed, ...loads.map((l) => l.selection)]) {
-        if (!known.has(name)) {
-          throw new Error(
-            `[calculix_solve_buckling] '${name}' is referenced in fixed/loads ` +
-              `but not declared in selections (${[...known].join(", ")}).`,
-          );
-        }
-      }
-      const overlap = fixed.filter((f) => loads.some((l) => l.selection === f));
-      if (overlap.length > 0) {
-        throw new Error(
-          `[calculix_solve_buckling] ${overlap.join(", ")} is both fixed and ` +
-            `loaded — a fully fixed node ignores its load.`,
+      if (
+        !Number.isInteger(nModes) || nModes < 1 || nModes > 30
+      ) {
+        throw new SolveError(
+          `[calculix_solve_buckling] n_modes must be an integer in [1, 30], ` +
+            `got ${nModes}.`,
         );
       }
 
       const snapshot = await snapshotStepArtifact(
-        args.step_path as string,
-        args.expected_step_sha256 as string | undefined,
+        stepPath,
+        expectedStepSha256,
       );
 
       try {
         const mesh = await meshStep({
           stepPath: snapshot.artifact.path,
           selections,
-          meshSizeMm: args.mesh_size_mm as number,
-          elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
+          meshSizeMm,
+          elementOrder,
           timeoutMs,
         });
 
-        const materialInput = args.material as { e_mpa: number; nu: number };
+        assertMechanicalFixedAndLoadNodeDisjoint(
+          mesh.inpText,
+          fixed,
+          loads.map((load) => load.selection),
+        );
+
         const nodalLoads: NodalLoad[] = loads.map((l) => ({
           selection: l.selection,
           totalForceN: l.force_n,
@@ -235,7 +245,7 @@ export const buckleTools: CalculixTool[] = [
         const deck = buildBuckleDeck({
           inpText: mesh.inpText,
           maxNodeId: mesh.maxNodeId,
-          material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
+          material: { eMpa: material.e_mpa, nu: material.nu },
           fixed,
           loads: nodalLoads,
           nodesPerSet: mesh.nodesPerSet,
@@ -280,3 +290,4 @@ export const buckleTools: CalculixTool[] = [
     },
   },
 ];
+tightenCommonOrdinaryInputSchema(buckleTools[0].inputSchema);

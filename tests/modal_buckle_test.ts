@@ -205,7 +205,7 @@ Deno.test("parseModalDat - empty .dat is a SolveError, not silence", () => {
 
 Deno.test("buildBuckleDeck - two-step deck: *STATIC then *BUCKLE", () => {
   const deck = buildBuckleDeck({
-    inpText: "*NODE\n1, 0, 0, 0",
+    inpText: "*NODE\n1, 0, 0, 0\n*NSET,NSET=FIXED\n1\n*NSET,NSET=LOADED\n2",
     maxNodeId: 100,
     material: { eMpa: 70000, nu: 0.33 },
     fixed: ["FIXED"],

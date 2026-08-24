@@ -1,8 +1,10 @@
 /**
  * @casys/mcp-calculix
  *
- * MCP tools for finite element analysis: Gmsh meshing + CalculiX linear
- * static solve on STEP files, with faces designated by named bounding boxes.
+ * MCP tools for finite element analysis of STEP parts: Gmsh meshing plus
+ * CalculiX linear static, modal, linear buckling, Norton-law creep, and
+ * steady-state coupled temperature-displacement analyses, with faces
+ * designated by named bounding boxes.
  *
  * @module
  */
@@ -70,6 +72,7 @@ export {
   MeshingError,
   meshStep,
   meshStepRecorded,
+  parseNsetNodeIds,
 } from "./src/api/gmsh.ts";
 export type {
   FaceSelection,
@@ -79,6 +82,7 @@ export type {
   RecordedMeshResult,
 } from "./src/api/gmsh.ts";
 export {
+  assertMechanicalFixedAndLoadNodeDisjoint,
   buildBuckleDeck,
   buildCoupledThermalDeck,
   buildCreepDeck,
@@ -89,6 +93,7 @@ export {
   parseCoupledThermalDat,
   parseDat,
   parseDatLastIncrement,
+  parseDatLastIncrementObserved,
   parseModalDat,
   solveBuckleDeck,
   solveCoupledThermalDeck,
@@ -105,6 +110,7 @@ export type {
   CoupledThermalResult,
   CreepDeckOptions,
   DeckOptions,
+  LastIncrementResult,
   Material,
   ModalDeckOptions,
   ModalResult,

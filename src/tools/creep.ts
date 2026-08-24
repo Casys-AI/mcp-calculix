@@ -1,7 +1,7 @@
 /**
  * CalculiX creep (*VISCO + Norton law) solve tool
  *
- * One tool, one deterministic pipeline: STEP → Gmsh mesh → CalculiX
+ * Deterministic pipeline: STEP → Gmsh mesh → CalculiX
  * *VISCO solve with Norton power-law creep → displacement and von Mises
  * stress at the END of the specified creep duration.
  *
@@ -21,9 +21,16 @@
  */
 
 import type { CalculixTool } from "./types.ts";
-import { type FaceSelection, meshStep } from "../api/gmsh.ts";
 import {
+  parseOrdinarySolveArgs,
+  tightenCommonOrdinaryInputSchema,
+} from "./ordinary-preflight.ts";
+import { meshStep } from "../api/gmsh.ts";
+import {
+  assertCreepReachedRequestedDuration,
+  assertMechanicalFixedAndLoadNodeDisjoint,
   buildCreepDeck,
+  formatObservedTimeS,
   type NodalLoad,
   solveCreepDeck,
   SolveError,
@@ -226,12 +233,20 @@ export const creepTools: CalculixTool[] = [
       ],
     },
     handler: async (args) => {
-      const selections = args.selections as FaceSelection[];
-      const fixed = args.fixed as string[];
-      const loads = args.loads as Array<
-        { selection: string; force_n: [number, number, number] }
-      >;
-      const timeoutMs = (args.timeout_ms as number) ?? 120_000;
+      const {
+        stepPath,
+        expectedStepSha256,
+        meshSizeMm,
+        elementOrder,
+        timeoutMs,
+        material,
+        selections,
+        fixed,
+        loads,
+      } = parseOrdinarySolveArgs(args, {
+        toolName: "calculix_solve_creep",
+        loads: "required",
+      });
       const nortonA = args.norton_a as number;
       const nortonN = args.norton_n as number;
       const durationS = args.duration_s as number;
@@ -259,39 +274,26 @@ export const creepTools: CalculixTool[] = [
         );
       }
 
-      // Referenced names must exist before any subprocess runs.
-      const known = new Set(selections.map((s) => s.name));
-      for (const name of [...fixed, ...loads.map((l) => l.selection)]) {
-        if (!known.has(name)) {
-          throw new Error(
-            `[calculix_solve_creep] '${name}' is referenced in fixed/loads ` +
-              `but not declared in selections (${[...known].join(", ")}).`,
-          );
-        }
-      }
-      const overlap = fixed.filter((f) => loads.some((l) => l.selection === f));
-      if (overlap.length > 0) {
-        throw new Error(
-          `[calculix_solve_creep] ${overlap.join(", ")} is both fixed and ` +
-            `loaded — a fully fixed node ignores its load.`,
-        );
-      }
-
       const snapshot = await snapshotStepArtifact(
-        args.step_path as string,
-        args.expected_step_sha256 as string | undefined,
+        stepPath,
+        expectedStepSha256,
       );
 
       try {
         const mesh = await meshStep({
           stepPath: snapshot.artifact.path,
           selections,
-          meshSizeMm: args.mesh_size_mm as number,
-          elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
+          meshSizeMm,
+          elementOrder,
           timeoutMs,
         });
 
-        const materialInput = args.material as { e_mpa: number; nu: number };
+        assertMechanicalFixedAndLoadNodeDisjoint(
+          mesh.inpText,
+          fixed,
+          loads.map((load) => load.selection),
+        );
+
         const nodalLoads: NodalLoad[] = loads.map((l) => ({
           selection: l.selection,
           totalForceN: l.force_n,
@@ -300,7 +302,7 @@ export const creepTools: CalculixTool[] = [
         const deck = buildCreepDeck({
           inpText: mesh.inpText,
           maxNodeId: mesh.maxNodeId,
-          material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
+          material: { eMpa: material.e_mpa, nu: material.nu },
           fixed,
           loads: nodalLoads,
           nodesPerSet: mesh.nodesPerSet,
@@ -311,6 +313,7 @@ export const creepTools: CalculixTool[] = [
         });
 
         const result = await solveCreepDeck(deck, timeoutMs);
+        assertCreepReachedRequestedDuration(result.observedTimeS, durationS);
 
         const structuredContent = {
           schemaVersion: CREEP_SOLVE_SCHEMA_VERSION,
@@ -344,11 +347,13 @@ export const creepTools: CalculixTool[] = [
           },
         };
         return {
-          content:
-            `Creep solve complete for STEP sha256:${snapshot.artifact.sha256}: ` +
-            `${mesh.nodeCount} nodes, after ${durationS} s creep: ` +
-            `max disp ${result.maxDisplacement.magnitudeMm.toFixed(4)} mm, ` +
-            `max von Mises ${result.maxVonMises.mpa.toFixed(3)} MPa.`,
+          content: creepSolveTextSummary({
+            stepSha256: snapshot.artifact.sha256,
+            nodeCount: mesh.nodeCount,
+            observedTimeS: result.observedTimeS,
+            maxDisplacementMm: result.maxDisplacement.magnitudeMm,
+            maxVonMisesMpa: result.maxVonMises.mpa,
+          }),
           structuredContent,
         };
       } finally {
@@ -357,3 +362,19 @@ export const creepTools: CalculixTool[] = [
     },
   },
 ];
+tightenCommonOrdinaryInputSchema(creepTools[0].inputSchema);
+
+export function creepSolveTextSummary(args: {
+  stepSha256: string;
+  nodeCount: number;
+  observedTimeS: number;
+  maxDisplacementMm: number;
+  maxVonMisesMpa: number;
+}): string {
+  return `Creep solve complete for STEP sha256:${args.stepSha256}: ` +
+    `${args.nodeCount} nodes, at observed t=${
+      formatObservedTimeS(args.observedTimeS)
+    } s: ` +
+    `max disp ${args.maxDisplacementMm.toFixed(4)} mm, ` +
+    `max von Mises ${args.maxVonMisesMpa.toFixed(3)} MPa.`;
+}

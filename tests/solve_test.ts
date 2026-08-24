@@ -5,7 +5,12 @@
  */
 
 import { assertAlmostEquals, assertEquals, assertRejects } from "@std/assert";
-import { solveTools } from "../src/tools/solve.ts";
+import { CalculixRunStore } from "../src/runs.ts";
+import {
+  CALCULIX_RESULTS_VIEWER_URI,
+  createRecordedStaticTools,
+  solveTools,
+} from "../src/tools/solve.ts";
 import { buildDeck, parseDat, SolveError } from "../src/api/ccx.ts";
 import {
   buildGeoScript,
@@ -155,6 +160,29 @@ Deno.test("calculix_solve_static declares a closed MCP App static-solve contract
   );
 });
 
+Deno.test("calculix_solve_static_recorded wires the results viewer; calculix_run_get does not", async () => {
+  const runsDirectory = await Deno.makeTempDir({
+    prefix: "calculix-viewer-meta-",
+  });
+  try {
+    const tools = createRecordedStaticTools(
+      new CalculixRunStore({ runsDirectory }),
+    );
+    const recorded = tools.find((tool) =>
+      tool.name === "calculix_solve_static_recorded"
+    );
+    const runGet = tools.find((tool) => tool.name === "calculix_run_get");
+    assertEquals(
+      recorded?._meta?.ui?.resourceUri,
+      CALCULIX_RESULTS_VIEWER_URI,
+    );
+    assertEquals(runGet?._meta?.ui?.resourceUri, undefined);
+    assertEquals(runGet?._meta, undefined);
+  } finally {
+    await Deno.remove(runsDirectory, { recursive: true });
+  }
+});
+
 Deno.test("snapshotStepArtifact attests the private copy and enforces an expected digest", async () => {
   const source = await Deno.makeTempFile({ suffix: ".step" });
   const content = "ISO-10303-21;\nEND-ISO-10303-21;\n";
@@ -296,7 +324,7 @@ Deno.test("cleanInp - surface elements go, volume elements and node sets stay", 
 
 Deno.test("buildDeck - generates NALL, splits total force per node, rejects bad material", () => {
   const deck = buildDeck({
-    inpText: "*NODE\n1, 0, 0, 0",
+    inpText: "*NODE\n1, 0, 0, 0\n*NSET,NSET=FIXED\n1\n*NSET,NSET=LOADED\n2",
     maxNodeId: 100,
     material: { eMpa: 70000, nu: 0.33 },
     fixed: ["FIXED"],

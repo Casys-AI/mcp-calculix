@@ -1,7 +1,7 @@
 /**
  * CalculiX solve tool
  *
- * One tool, one deterministic pipeline: STEP → Gmsh mesh (named face
+ * Deterministic pipeline: STEP → Gmsh mesh (named face
  * selections by bounding box) → CalculiX linear static solve → max
  * displacement and max von Mises stress. No intermediate state to manage —
  * the same inputs always produce the same answer.
@@ -14,8 +14,13 @@
  */
 
 import type { CalculixTool } from "./types.ts";
-import { type FaceSelection, meshStep, meshStepRecorded } from "../api/gmsh.ts";
 import {
+  parseOrdinarySolveArgs,
+  tightenCommonOrdinaryInputSchema,
+} from "./ordinary-preflight.ts";
+import { meshStep, meshStepRecorded } from "../api/gmsh.ts";
+import {
+  assertMechanicalFixedAndLoadNodeDisjoint,
   buildDeck,
   type NodalLoad,
   parseDat,
@@ -194,47 +199,41 @@ export const solveTools: CalculixTool[] = [
       ],
     },
     handler: async (args) => {
-      const selections = args.selections as FaceSelection[];
-      const fixed = args.fixed as string[];
-      const loads = args.loads as Array<
-        { selection: string; force_n: [number, number, number] }
-      >;
-      const timeoutMs = (args.timeout_ms as number) ?? 120_000;
-
-      // Referenced names must exist before any subprocess runs.
-      const known = new Set(selections.map((s) => s.name));
-      for (const name of [...fixed, ...loads.map((l) => l.selection)]) {
-        if (!known.has(name)) {
-          throw new Error(
-            `[calculix_solve_static] '${name}' is referenced in fixed/loads ` +
-              `but not declared in selections (${[...known].join(", ")}).`,
-          );
-        }
-      }
-      const overlap = fixed.filter((f) => loads.some((l) => l.selection === f));
-      if (overlap.length > 0) {
-        throw new Error(
-          `[calculix_solve_static] ${overlap.join(", ")} is both fixed and ` +
-            `loaded — a fully fixed node ignores its load, which is almost ` +
-            `certainly not what you meant.`,
-        );
-      }
+      const {
+        stepPath,
+        expectedStepSha256,
+        meshSizeMm,
+        elementOrder,
+        timeoutMs,
+        material,
+        selections,
+        fixed,
+        loads,
+      } = parseOrdinarySolveArgs(args, {
+        toolName: "calculix_solve_static",
+        loads: "required",
+      });
 
       const snapshot = await snapshotStepArtifact(
-        args.step_path as string,
-        args.expected_step_sha256 as string | undefined,
+        stepPath,
+        expectedStepSha256,
       );
 
       try {
         const mesh = await meshStep({
           stepPath: snapshot.artifact.path,
           selections,
-          meshSizeMm: args.mesh_size_mm as number,
-          elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
+          meshSizeMm,
+          elementOrder,
           timeoutMs,
         });
 
-        const materialInput = args.material as { e_mpa: number; nu: number };
+        assertMechanicalFixedAndLoadNodeDisjoint(
+          mesh.inpText,
+          fixed,
+          loads.map((load) => load.selection),
+        );
+
         const nodalLoads: NodalLoad[] = loads.map((l) => ({
           selection: l.selection,
           totalForceN: l.force_n,
@@ -243,7 +242,7 @@ export const solveTools: CalculixTool[] = [
         const deck = buildDeck({
           inpText: mesh.inpText,
           maxNodeId: mesh.maxNodeId,
-          material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
+          material: { eMpa: material.e_mpa, nu: material.nu },
           fixed,
           loads: nodalLoads,
           nodesPerSet: mesh.nodesPerSet,
@@ -292,6 +291,7 @@ export const solveTools: CalculixTool[] = [
     },
   },
 ];
+tightenCommonOrdinaryInputSchema(solveTools[0].inputSchema);
 
 /**
  * Explicit successor tools for durable evidence.  `calculix_solve_static`
@@ -325,6 +325,7 @@ export function createRecordedStaticTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      _meta: { ui: { resourceUri: CALCULIX_RESULTS_VIEWER_URI } },
       handler: async (args) => {
         // This validation is pure: defaults are fixed before the durable
         // request_id + digest election, but it never probes the local host.
@@ -403,6 +404,11 @@ export function createRecordedStaticTools(
                 "Gmsh private input.step bytes do not match the sealed STEP snapshot.",
               );
             }
+            assertMechanicalFixedAndLoadNodeDisjoint(
+              recordedMesh.mesh.inpText,
+              fixed,
+              loads.map((load) => load.selection),
+            );
             const nodalLoads: NodalLoad[] = loads.map((load) => ({
               selection: load.selection,
               totalForceN: load.force_n,
@@ -475,7 +481,8 @@ export function createRecordedStaticTools(
       description:
         "Read the immutable ledger of a recorded CalculiX static run. This is " +
         "read-only recovery for a lost acknowledgement; use its closed artifact " +
-        "URIs with resources/read to retrieve independently rehashed exact text.",
+        "URIs with resources/read to retrieve the independently rehashed exact " +
+        "STEP blob and UTF-8 text resources.",
       category: "solve",
       inputSchema: {
         type: "object",
@@ -643,7 +650,7 @@ async function resolveExecutionIdentity(): Promise<
   ]);
   return {
     schema_version: "1.0",
-    server: { package: "@casys/mcp-calculix", version: "0.7.0" },
+    server: { package: "@casys/mcp-calculix", version: "0.7.1" },
     method: { id: "calculix_solve_static_recorded", version: "1.0" },
     lowering: { id: "calculix.static.abaqus-deck", version: "1.0" },
     engines: {

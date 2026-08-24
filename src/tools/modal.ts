@@ -1,7 +1,7 @@
 /**
  * CalculiX modal (eigenfrequency) solve tool
  *
- * One tool, one deterministic pipeline: STEP → Gmsh mesh → CalculiX
+ * Deterministic pipeline: STEP → Gmsh mesh → CalculiX
  * *FREQUENCY solve → eigenfrequencies in Hz.  The same inputs always
  * produce the same answer.
  *
@@ -20,7 +20,11 @@
  */
 
 import type { CalculixTool } from "./types.ts";
-import { type FaceSelection, meshStep } from "../api/gmsh.ts";
+import {
+  parseOrdinarySolveArgs,
+  tightenCommonOrdinaryInputSchema,
+} from "./ordinary-preflight.ts";
+import { meshStep } from "../api/gmsh.ts";
 import { buildModalDeck, SolveError, solveModalDeck } from "../api/ccx.ts";
 import { snapshotStepArtifact } from "../api/input-artifact.ts";
 import {
@@ -175,9 +179,19 @@ export const modalTools: CalculixTool[] = [
       ],
     },
     handler: async (args) => {
-      const selections = args.selections as FaceSelection[];
-      const fixed = args.fixed as string[];
-      const timeoutMs = (args.timeout_ms as number) ?? 120_000;
+      const {
+        stepPath,
+        expectedStepSha256,
+        meshSizeMm,
+        elementOrder,
+        timeoutMs,
+        material,
+        selections,
+        fixed,
+      } = parseOrdinarySolveArgs(args, {
+        toolName: "calculix_solve_modal",
+        loads: "none",
+      });
       const nModes = (args.n_modes as number) ?? 6;
       const densityKgM3 = args.density_kg_m3 as number;
 
@@ -199,37 +213,24 @@ export const modalTools: CalculixTool[] = [
         );
       }
 
-      // Named references must exist before any subprocess runs.
-      const known = new Set(selections.map((s) => s.name));
-      for (const name of fixed) {
-        if (!known.has(name)) {
-          throw new Error(
-            `[calculix_solve_modal] '${name}' is referenced in fixed ` +
-              `but not declared in selections (${[...known].join(", ")}).`,
-          );
-        }
-      }
-
       const snapshot = await snapshotStepArtifact(
-        args.step_path as string,
-        args.expected_step_sha256 as string | undefined,
+        stepPath,
+        expectedStepSha256,
       );
 
       try {
         const mesh = await meshStep({
           stepPath: snapshot.artifact.path,
           selections,
-          meshSizeMm: args.mesh_size_mm as number,
-          elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
+          meshSizeMm,
+          elementOrder,
           timeoutMs,
         });
-
-        const materialInput = args.material as { e_mpa: number; nu: number };
 
         const deck = buildModalDeck({
           inpText: mesh.inpText,
           maxNodeId: mesh.maxNodeId,
-          material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
+          material: { eMpa: material.e_mpa, nu: material.nu },
           densityKgM3,
           fixed,
           nModes,
@@ -248,8 +249,8 @@ export const modalTools: CalculixTool[] = [
           },
           constraints: { fixedSelections: fixed },
           material: {
-            eMpa: materialInput.e_mpa,
-            nu: materialInput.nu,
+            eMpa: material.e_mpa,
+            nu: material.nu,
             densityKgM3,
           },
           metrics: { frequenciesHz: result.frequenciesHz },
@@ -271,3 +272,4 @@ export const modalTools: CalculixTool[] = [
     },
   },
 ];
+tightenCommonOrdinaryInputSchema(modalTools[0].inputSchema);

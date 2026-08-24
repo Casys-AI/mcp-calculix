@@ -4,6 +4,24 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-24
+
+### Added
+
+- `calculix_solve_static_recorded` now attaches the existing results-viewer MCP
+  App metadata used by ordinary static solves. `calculix_run_get` does not,
+  because its recovery result shape differs.
+
+### Changed
+
+- Ordinary static, modal, buckling, creep, and coupled-thermal solves validate
+  shared physical inputs before the STEP snapshot, Gmsh, or CalculiX.
+- Creep text summaries report the observed final increment time. A premature
+  stop versus `duration_s` is rejected; `structuredContent` is unchanged.
+- Mechanical fixed and load selections that share actual mesh node IDs are
+  rejected even when their names differ. A thermal BC may still overlap a
+  mechanically fixed set.
+
 ## [0.7.0] - 2026-08-11
 
 ### Added

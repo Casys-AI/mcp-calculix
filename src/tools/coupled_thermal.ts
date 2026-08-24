@@ -1,7 +1,7 @@
 /**
  * CalculiX coupled temperature-displacement solve tool
  *
- * One tool, one deterministic pipeline: STEP → Gmsh mesh → CalculiX
+ * Deterministic pipeline: STEP → Gmsh mesh → CalculiX
  * *COUPLED TEMPERATURE-DISPLACEMENT (steady state) → temperatures, displace-
  * ments, and von Mises stresses from the combined thermo-mechanical field.
  *
@@ -23,8 +23,13 @@
  */
 
 import type { CalculixTool } from "./types.ts";
-import { type FaceSelection, meshStep } from "../api/gmsh.ts";
 import {
+  parseOrdinarySolveArgs,
+  tightenCommonOrdinaryInputSchema,
+} from "./ordinary-preflight.ts";
+import { meshStep } from "../api/gmsh.ts";
+import {
+  assertMechanicalFixedAndLoadNodeDisjoint,
   buildCoupledThermalDeck,
   type NodalLoad,
   solveCoupledThermalDeck,
@@ -241,17 +246,27 @@ export const coupledThermalTools: CalculixTool[] = [
       ],
     },
     handler: async (args) => {
-      const selections = args.selections as FaceSelection[];
-      const fixed = args.fixed as string[];
-      const thermalBCsRaw = args.thermal_bcs as Array<
-        { selection: string; temperature_c: number }
-      >;
-      const loadsRaw = (args.loads as
-        | Array<
-          { selection: string; force_n: [number, number, number] }
+      const thermalBCsRaw = Array.isArray(args.thermal_bcs)
+        ? args.thermal_bcs as Array<
+          { selection: string; temperature_c: number }
         >
-        | undefined) ?? [];
-      const timeoutMs = (args.timeout_ms as number) ?? 120_000;
+        : [];
+      const {
+        stepPath,
+        expectedStepSha256,
+        meshSizeMm,
+        elementOrder,
+        timeoutMs,
+        material,
+        selections,
+        fixed,
+        loads,
+      } = parseOrdinarySolveArgs(args, {
+        toolName: "calculix_solve_coupled_thermal",
+        loads: "optional",
+        extraReferencedNames: thermalBCsRaw.map((bc) => bc.selection),
+        extraReferenceRole: "fixed/thermal_bcs/loads",
+      });
       const conductivityWmK = args.conductivity_w_mk as number;
       const expansionPerK = args.expansion_per_k as number;
       const referenceTemperatureC = args.reference_temperature_c as number;
@@ -275,34 +290,6 @@ export const coupledThermalTools: CalculixTool[] = [
         );
       }
 
-      // All named selections must be declared.
-      const known = new Set(selections.map((s) => s.name));
-      const allNamed = [
-        ...fixed,
-        ...thermalBCsRaw.map((bc) => bc.selection),
-        ...loadsRaw.map((l) => l.selection),
-      ];
-      for (const name of allNamed) {
-        if (!known.has(name)) {
-          throw new Error(
-            `[calculix_solve_coupled_thermal] '${name}' is referenced in ` +
-              `fixed/thermal_bcs/loads but not declared in selections ` +
-              `(${[...known].join(", ")}).`,
-          );
-        }
-      }
-
-      // Mechanical overlap guard: a selection both fixed and loaded.
-      const overlap = fixed.filter((f) =>
-        loadsRaw.some((l) => l.selection === f)
-      );
-      if (overlap.length > 0) {
-        throw new Error(
-          `[calculix_solve_coupled_thermal] ${overlap.join(", ")} is both ` +
-            `fixed and loaded — a fully fixed node ignores its load.`,
-        );
-      }
-
       // Duplicate thermal BCs on the same selection.
       const thermalNames = thermalBCsRaw.map((bc) => bc.selection);
       const thermalDups = thermalNames.filter(
@@ -316,25 +303,30 @@ export const coupledThermalTools: CalculixTool[] = [
       }
 
       const snapshot = await snapshotStepArtifact(
-        args.step_path as string,
-        args.expected_step_sha256 as string | undefined,
+        stepPath,
+        expectedStepSha256,
       );
 
       try {
         const mesh = await meshStep({
           stepPath: snapshot.artifact.path,
           selections,
-          meshSizeMm: args.mesh_size_mm as number,
-          elementOrder: ((args.element_order as number) ?? 2) as 1 | 2,
+          meshSizeMm,
+          elementOrder,
           timeoutMs,
         });
 
-        const materialInput = args.material as { e_mpa: number; nu: number };
+        assertMechanicalFixedAndLoadNodeDisjoint(
+          mesh.inpText,
+          fixed,
+          loads.map((load) => load.selection),
+        );
+
         const thermalBCs: ThermalBC[] = thermalBCsRaw.map((bc) => ({
           selection: bc.selection,
           temperatureC: bc.temperature_c,
         }));
-        const nodalLoads: NodalLoad[] = loadsRaw.map((l) => ({
+        const nodalLoads: NodalLoad[] = loads.map((l) => ({
           selection: l.selection,
           totalForceN: l.force_n,
         }));
@@ -342,7 +334,7 @@ export const coupledThermalTools: CalculixTool[] = [
         const deck = buildCoupledThermalDeck({
           inpText: mesh.inpText,
           maxNodeId: mesh.maxNodeId,
-          material: { eMpa: materialInput.e_mpa, nu: materialInput.nu },
+          material: { eMpa: material.e_mpa, nu: material.nu },
           conductivityWmK,
           expansionPerK,
           referenceTemperatureC,
@@ -369,14 +361,14 @@ export const coupledThermalTools: CalculixTool[] = [
               selection: bc.selection,
               temperatureC: bc.temperature_c,
             })),
-            loads: loadsRaw.map((load) => ({
+            loads: loads.map((load) => ({
               selection: load.selection,
               forceN: load.force_n,
             })),
           },
           material: {
-            eMpa: materialInput.e_mpa,
-            nu: materialInput.nu,
+            eMpa: material.e_mpa,
+            nu: material.nu,
             conductivityWmK,
             expansionPerK,
             referenceTemperatureC,
@@ -414,3 +406,4 @@ export const coupledThermalTools: CalculixTool[] = [
     },
   },
 ];
+tightenCommonOrdinaryInputSchema(coupledThermalTools[0].inputSchema);

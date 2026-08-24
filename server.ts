@@ -1,4 +1,4 @@
-/** Stateless HTTP MCP server for deterministic CalculiX static solves. */
+/** Stateless HTTP MCP server for bounded deterministic CalculiX analyses. */
 
 import {
   McpApp,
@@ -10,7 +10,7 @@ import { CalculixToolsClient } from "./src/client.ts";
 import { CalculixRunStore, type RecordedStaticRun } from "./src/runs.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
-const VERSION = "0.7.0";
+const VERSION = "0.7.1";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 
@@ -65,7 +65,11 @@ export function createCalculixServer(
     // immediately after a successful solve, including after startHttp().
     expectResources: true,
     instructions:
-      "Deterministic finite-element static solves. Results report mesh and physical observations only; no requirement verdict is produced.",
+      "Bounded finite-element analysis of STEP parts: linear static, modal, " +
+      "linear buckling, Norton-law creep, and steady-state coupled " +
+      "temperature-displacement. Results report mesh and physical " +
+      "observations only; durable exact evidence is available for recorded " +
+      "static solves, and no requirement verdict is produced.",
     logger,
   });
   app.registerTools(toolsClient.toMCPFormat(), handlers);

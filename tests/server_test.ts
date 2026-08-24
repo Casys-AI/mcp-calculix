@@ -11,6 +11,7 @@ const META = {
   "io.modelcontextprotocol/clientCapabilities": {},
   "io.modelcontextprotocol/clientInfo": {
     name: "mcp-calculix-test",
+    // Test client identity, not the mcp-calculix package version.
     version: "0.7.0",
   },
 };
@@ -62,12 +63,12 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.7.0",
+      version: "0.7.1",
     });
 
     const listed = await rpc(url, "tools/list");
-    const tool = (listed.body.result.tools as Array<Record<string, unknown>>)
-      .find((item) => item.name === "calculix_solve_static");
+    const tools = listed.body.result.tools as Array<Record<string, unknown>>;
+    const tool = tools.find((item) => item.name === "calculix_solve_static");
     assert(tool);
     assertEquals(
       (tool.outputSchema as Record<string, unknown>).additionalProperties,
@@ -78,6 +79,21 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
         .resourceUri,
       "ui://mcp-calculix/results-viewer",
     );
+    const recorded = tools.find((item) =>
+      item.name === "calculix_solve_static_recorded"
+    );
+    assert(recorded);
+    assertEquals(
+      ((recorded._meta as Record<string, unknown>).ui as Record<
+        string,
+        unknown
+      >)
+        .resourceUri,
+      "ui://mcp-calculix/results-viewer",
+    );
+    const runGet = tools.find((item) => item.name === "calculix_run_get");
+    assert(runGet);
+    assertEquals(runGet._meta, undefined);
 
     const called = await rpc(url, "tools/call", {
       name: "calculix_solve_static",

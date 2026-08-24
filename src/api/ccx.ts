@@ -11,6 +11,8 @@
  * @module lib/calculix/api/ccx
  */
 
+import { parseNsetNodeIds } from "./gmsh.ts";
+
 /** Raised when the ccx executable cannot be found. */
 export class CcxNotFoundError extends Error {
   constructor() {
@@ -55,6 +57,59 @@ export interface DeckOptions {
   loads: NodalLoad[];
   /** Node count per set, to split total forces into per-node values. */
   nodesPerSet: Record<string, number>;
+}
+
+/**
+ * Reject a mechanical fixed selection and a mechanical load selection that
+ * share actual node IDs, even when the selection names differ. Thermal BCs
+ * are not passed here and are never treated as mechanical loads.
+ *
+ * Call this on new native execution after the mesh exists. Recorded replay
+ * rebuilds job.inp with `buildDeck` and must not invoke this guard.
+ */
+export function assertMechanicalFixedAndLoadNodeDisjoint(
+  inpText: string,
+  fixed: string[],
+  loadSelections: string[],
+): void {
+  if (loadSelections.length === 0) return;
+  let sets: Record<string, Set<number>>;
+  try {
+    sets = parseNsetNodeIds(inpText);
+  } catch (error) {
+    throw new SolveError(
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  const owner = new Map<number, string>();
+  for (const name of fixed) {
+    const nodes = sets[name.toUpperCase()];
+    if (!nodes || nodes.size === 0) {
+      throw new SolveError(
+        `Fixed selection '${name}' has no node ids in the mesh NSET.`,
+      );
+    }
+    for (const id of nodes) {
+      if (!owner.has(id)) owner.set(id, name);
+    }
+  }
+  for (const name of loadSelections) {
+    const nodes = sets[name.toUpperCase()];
+    if (!nodes || nodes.size === 0) {
+      throw new SolveError(
+        `Load selection '${name}' has no node ids in the mesh NSET.`,
+      );
+    }
+    for (const id of nodes) {
+      const fixedName = owner.get(id);
+      if (fixedName !== undefined) {
+        throw new SolveError(
+          `Mechanical fixed selection '${fixedName}' and load selection ` +
+            `'${name}' share node ${id}.`,
+        );
+      }
+    }
+  }
 }
 
 /** Build the complete CalculiX input deck. */
@@ -757,9 +812,99 @@ export function buildCreepDeck(options: CreepDeckOptions): string {
  *
  * This function locates the last "INCREMENT" header and passes only its
  * trailing text to `parseDat`, ensuring the result reflects the end state
- * regardless of the loading history.
+ * regardless of the loading history. It does not parse the printed time.
  */
 export function parseDatLastIncrement(datText: string): SolveResult {
+  return parseDat(lastIncrementTrailingText(datText));
+}
+
+export interface LastIncrementResult extends SolveResult {
+  /** Printed time of the final converged displacement/stress sections, in s. */
+  observedTimeS: number;
+}
+
+/** CalculiX prints times in Fortran scientific format (~7 significant digits). */
+export const CREEP_TIME_PRINT_RELATIVE_TOLERANCE = 1e-6;
+export const CREEP_TIME_PRINT_ABSOLUTE_TOLERANCE = 1e-9;
+
+/**
+ * Parse the last INCREMENT block and the printed times of its final
+ * displacement and stress sections. Missing or disagreeing times fail.
+ */
+export function parseDatLastIncrementObserved(
+  datText: string,
+): LastIncrementResult {
+  const block = lastIncrementTrailingText(datText);
+  const result = parseDat(block);
+  const displacementTime = parseSectionTime(block, "displacements");
+  const stressTime = parseSectionTime(block, "stresses");
+  if (displacementTime === undefined || stressTime === undefined) {
+    throw new SolveError(
+      "The final INCREMENT is missing a displacement or stress time.",
+    );
+  }
+  if (!creepPrintedTimesAgree(displacementTime, stressTime)) {
+    throw new SolveError(
+      `Final increment displacement time ${displacementTime} s does not ` +
+        `match stress time ${stressTime} s.`,
+    );
+  }
+  return { ...result, observedTimeS: displacementTime };
+}
+
+export function creepPrintedTimesAgree(
+  left: number,
+  right: number,
+): boolean {
+  const scale = Math.max(
+    Math.abs(left),
+    Math.abs(right),
+    CREEP_TIME_PRINT_ABSOLUTE_TOLERANCE,
+  );
+  return Math.abs(left - right) <= Math.max(
+    CREEP_TIME_PRINT_RELATIVE_TOLERANCE * scale,
+    CREEP_TIME_PRINT_ABSOLUTE_TOLERANCE,
+  );
+}
+
+export function formatObservedTimeS(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new SolveError(`observed time is not finite: ${value}`);
+  }
+  if (Number.isInteger(value)) return String(value);
+  const compact = Number(value.toPrecision(7));
+  if (Number.isInteger(compact)) return String(compact);
+  return String(compact);
+}
+
+export function assertCreepReachedRequestedDuration(
+  observedTimeS: number,
+  requestedDurationS: number,
+): void {
+  if (!Number.isFinite(observedTimeS) || observedTimeS < 0) {
+    throw new SolveError(
+      `Creep observed final time is invalid: ${observedTimeS}.`,
+    );
+  }
+  if (!Number.isFinite(requestedDurationS) || requestedDurationS <= 0) {
+    throw new SolveError(
+      `duration_s must be > 0, got ${requestedDurationS}.`,
+    );
+  }
+  const tolerance = Math.max(
+    CREEP_TIME_PRINT_RELATIVE_TOLERANCE * requestedDurationS,
+    CREEP_TIME_PRINT_ABSOLUTE_TOLERANCE,
+  );
+  if (observedTimeS + tolerance < requestedDurationS) {
+    throw new SolveError(
+      `Creep solve stopped at observed t=${
+        formatObservedTimeS(observedTimeS)
+      } s before requested duration_s=${requestedDurationS} s.`,
+    );
+  }
+}
+
+function lastIncrementTrailingText(datText: string): string {
   const lines = datText.split("\n");
   let lastIncrIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -775,16 +920,35 @@ export function parseDatLastIncrement(datText: string): SolveResult {
         `.dat starts with: ${datText.slice(0, 200)}`,
     );
   }
-  // parseDat handles the error guard if the block itself is empty.
-  return parseDat(lines.slice(lastIncrIdx + 1).join("\n"));
+  return lines.slice(lastIncrIdx + 1).join("\n");
+}
+
+function parseSectionTime(
+  text: string,
+  kind: "displacements" | "stresses",
+): number | undefined {
+  let found: number | undefined;
+  for (const line of text.split("\n")) {
+    if (!line.includes(kind) || !line.includes("and time")) continue;
+    const match = line.match(
+      /and time\s+([-+]?(?:\d+\.?\d*|\.\d+)(?:[EeDd][-+]?\d+)?)/,
+    );
+    if (!match) continue;
+    const value = Number(match[1].replace(/[Dd]/, "E"));
+    if (!Number.isFinite(value)) continue;
+    found = value;
+  }
+  return found;
 }
 
 /** Run CalculiX on a creep deck and parse the last-increment state. */
 export async function solveCreepDeck(
   deck: string,
   timeoutMs: number,
-): Promise<SolveResult> {
-  return parseDatLastIncrement((await runCcxRaw(deck, timeoutMs)).datText);
+): Promise<LastIncrementResult> {
+  return parseDatLastIncrementObserved(
+    (await runCcxRaw(deck, timeoutMs)).datText,
+  );
 }
 
 // ── Coupled temperature-displacement (*COUPLED TEMPERATURE-DISPLACEMENT) ──────

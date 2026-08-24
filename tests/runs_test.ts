@@ -4,7 +4,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { createHash } from "node:crypto";
 import { createCalculixServer } from "../server.ts";
 import { snapshotStepArtifact } from "../src/api/input-artifact.ts";
-import { buildDeck, parseDat } from "../src/api/ccx.ts";
+import { buildDeck, parseDat, SolveError } from "../src/api/ccx.ts";
 import { buildGeoScript } from "../src/api/gmsh.ts";
 import {
   RECORDED_STATIC_RUN_GET_OUTPUT_SCHEMA,
@@ -183,6 +183,153 @@ Deno.test("recorded static run persists exact blob/text resources and survives r
     );
   } finally {
     await Deno.remove(runsDirectory, { recursive: true });
+  }
+});
+
+Deno.test("recorded store replays a historical overlapping-NSET ledger", async () => {
+  const runsDirectory = await Deno.makeTempDir({
+    prefix: "calculix-overlap-replay-",
+  });
+  try {
+    const meshInp =
+      "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n*ELEMENT, TYPE=C3D4, ELSET=PART\n1, 1, 2, 1, 2\n*NSET,NSET=FIX\n1, 2\n*NSET,NSET=LOAD\n2\n";
+    const store = new CalculixRunStore({ runsDirectory });
+    const requestId = "historical-overlap";
+    const decision = await store.claimRequest(
+      requestId,
+      requestJson(requestId),
+    );
+    assert(decision.outcome === "claimed");
+    const runId = decision.claim.runId;
+    const jobDat = fakeDat();
+    const parsed = parseDat(jobDat);
+    const request = JSON.parse(requestJson(requestId)) as {
+      selections: Array<
+        {
+          name: string;
+          box: {
+            min: [number, number, number];
+            max: [number, number, number];
+          };
+        }
+      >;
+      mesh_size_mm: number;
+      element_order: 1 | 2;
+      material: { e_mpa: number; nu: number };
+      fixed: string[];
+      loads: Array<{ selection: string; force_n: [number, number, number] }>;
+    };
+    const run = await store.completeClaim(decision.claim, {
+      requestJson: requestJson(requestId),
+      inputArtifact: { sha256: STEP_SHA256, bytes: STEP_BYTES.length },
+      inputStep: STEP_BYTES,
+      meshGeo: buildGeoScript({
+        stepPath: "input.step",
+        selections: request.selections,
+        meshSizeMm: request.mesh_size_mm,
+        elementOrder: request.element_order,
+        timeoutMs: 1_000,
+      }),
+      meshInp,
+      gmshDiagnostics: "gmsh overlap\n",
+      jobInp: buildDeck({
+        inpText: meshInp,
+        maxNodeId: 2,
+        material: { eMpa: request.material.e_mpa, nu: request.material.nu },
+        fixed: request.fixed,
+        loads: request.loads.map((load) => ({
+          selection: load.selection,
+          totalForceN: load.force_n,
+        })),
+        nodesPerSet: { FIX: 2, LOAD: 1 },
+      }),
+      ccxDiagnostics: "ccx overlap\n",
+      jobDat,
+      resultJson: `${
+        canonicalJson({
+          schemaVersion: "2.0",
+          kind: "static-solve-recorded",
+          inputArtifact: {
+            uri: `casys://calculix/runs/${runId}/input.step`,
+            mimeType: "model/step",
+            sha256: STEP_SHA256,
+            bytes: STEP_BYTES.length,
+          },
+          mesh: {
+            nodes: 2,
+            elements: 1,
+            nodesPerSelection: { FIX: 2, LOAD: 1 },
+          },
+          constraints: {
+            fixedSelections: ["FIX"],
+            loads: [{ selection: "LOAD", forceN: [0, 0, -10] }],
+          },
+          metrics: {
+            maxDisplacement: {
+              value: parsed.maxDisplacement.magnitudeMm,
+              unit: "mm",
+              nodeId: parsed.maxDisplacement.nodeId,
+              vectorMm: parsed.maxDisplacement.vectorMm,
+            },
+            maxVonMises: {
+              value: parsed.maxVonMises.mpa,
+              unit: "MPa",
+              elementId: parsed.maxVonMises.elementId,
+            },
+          },
+        })
+      }\n`,
+    });
+    const restarted = new CalculixRunStore({ runsDirectory });
+    assertEquals(restarted.get(run.runId)?.runId, run.runId);
+    assertEquals(restarted.get(run.runId)?.state, "completed");
+  } finally {
+    await Deno.remove(runsDirectory, { recursive: true });
+  }
+});
+
+Deno.test("recorded new execution rejects overlapping NSETs before solve", async () => {
+  const directory = await Deno.makeTempDir({
+    prefix: "calculix-overlap-exec-",
+  });
+  const stepPath = join(directory, "part.step");
+  await Deno.writeFile(stepPath, STEP_BYTES);
+  let solves = 0;
+  try {
+    const store = new CalculixRunStore({
+      runsDirectory: join(directory, "runs"),
+    });
+    const overlappingInp =
+      "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n*ELEMENT, TYPE=C3D4, ELSET=PART\n1, 1, 2, 1, 2\n*NSET,NSET=FIX\n1, 2\n*NSET,NSET=LOAD\n2\n";
+    const tool = createRecordedStaticTools(store, {
+      resolveExecutionIdentity: () => Promise.resolve(testExecutionIdentity()),
+      snapshotStepArtifact,
+      meshStepRecorded: (options) => {
+        const base = fakeMesh(options);
+        return Promise.resolve({
+          ...base,
+          mesh: {
+            ...base.mesh,
+            inpText: overlappingInp,
+            nodesPerSet: { FIX: 2, LOAD: 1 },
+          },
+          artifacts: { ...base.artifacts, cleanedInpText: overlappingInp },
+        });
+      },
+      solveDeckRecorded: () => {
+        solves++;
+        return Promise.resolve(fakeSolve());
+      },
+    }).find((candidate) => candidate.name === "calculix_solve_static_recorded");
+    assert(tool);
+    await assertRejects(
+      async () => await tool.handler(recordedToolArgs(stepPath, "new-overlap")),
+      SolveError,
+      "share node",
+    );
+    assertEquals(solves, 0);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
   }
 });
 
@@ -1958,6 +2105,7 @@ function fakeDat(): string {
 }
 
 function testExecutionIdentity() {
+  // Historical 0.7.0 ledger fixture, including overlap-replay regression.
   return {
     schema_version: "1.0",
     server: { package: "@casys/mcp-calculix", version: "0.7.0" },

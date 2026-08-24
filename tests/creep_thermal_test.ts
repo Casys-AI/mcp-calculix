@@ -21,12 +21,15 @@ import { assertAlmostEquals, assertEquals, assertRejects } from "@std/assert";
 import { coupledThermalTools } from "../src/tools/coupled_thermal.ts";
 import { creepTools } from "../src/tools/creep.ts";
 import {
+  assertCreepReachedRequestedDuration,
   buildCoupledThermalDeck,
   buildCreepDeck,
   parseCoupledThermalDat,
   parseDatLastIncrement,
+  parseDatLastIncrementObserved,
   SolveError,
 } from "../src/api/ccx.ts";
+import { creepSolveTextSummary } from "../src/tools/creep.ts";
 
 const BRACKET_STEP =
   new URL("./fixtures/bracket.step", import.meta.url).pathname;
@@ -56,7 +59,7 @@ const BRACKET_SELECTIONS = [
 
 Deno.test("buildCreepDeck - contains *VISCO CETOL, *CREEP LAW=NORTON, *BOUNDARY, *CLOAD", () => {
   const deck = buildCreepDeck({
-    inpText: "*NODE\n1, 0, 0, 0",
+    inpText: "*NODE\n1, 0, 0, 0\n*NSET,NSET=FIXED\n1\n*NSET,NSET=LOADED\n2",
     maxNodeId: 10,
     material: { eMpa: 70000, nu: 0.33 },
     fixed: ["FIXED"],
@@ -79,7 +82,7 @@ Deno.test("buildCreepDeck - contains *VISCO CETOL, *CREEP LAW=NORTON, *BOUNDARY,
 
 Deno.test("buildCreepDeck - increment line: initial_dt, duration, min_dt, max_dt", () => {
   const deck = buildCreepDeck({
-    inpText: "",
+    inpText: "*NSET,NSET=BASE\n1\n*NSET,NSET=TOP\n2",
     maxNodeId: 1,
     material: { eMpa: 70000, nu: 0.33 },
     fixed: ["BASE"],
@@ -107,7 +110,7 @@ Deno.test("buildCreepDeck - increment line: initial_dt, duration, min_dt, max_dt
 
 Deno.test("buildCreepDeck - Norton A, n, 0 line correct", () => {
   const deck = buildCreepDeck({
-    inpText: "",
+    inpText: "*NSET,NSET=BASE\n1\n*NSET,NSET=TOP\n2",
     maxNodeId: 1,
     material: { eMpa: 70000, nu: 0.33 },
     fixed: ["BASE"],
@@ -232,6 +235,105 @@ Deno.test("parseDatLastIncrement - .dat with INCREMENT block but no data is a So
     thrown = e;
   }
   assertEquals(thrown instanceof SolveError, true);
+});
+
+function creepIncrementDat(
+  increment: number,
+  timeToken: string,
+  options: { displacementTime?: string; stressTime?: string } = {},
+): string {
+  const displacementTime = options.displacementTime ?? timeToken;
+  const stressTime = options.stressTime ?? timeToken;
+  const displacementHeader = displacementTime
+    ? ` displacements (vx,vy,vz) for set NALL and time  ${displacementTime}`
+    : " displacements (vx,vy,vz) for set NALL";
+  const stressHeader = stressTime
+    ? ` stresses (elem, integ.pnt.,sxx,syy,szz,sxy,sxz,syz) for set PART and time  ${stressTime}`
+    : " stresses (elem, integ.pnt.,sxx,syy,szz,sxy,sxz,syz) for set PART";
+  return `
+                                INCREMENT     ${increment}
+
+${displacementHeader}
+
+         1  1.000000E-02  0.000000E+00  0.000000E+00
+
+${stressHeader}
+
+         1  1  1.000000E+01  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00  0.000000E+00
+`;
+}
+
+Deno.test("parseDatLastIncrementObserved - real fixture reports t=100 s", async () => {
+  const datText = await Deno.readTextFile(CREEP_DAT);
+  const last = parseDatLastIncrement(datText);
+  const observed = parseDatLastIncrementObserved(datText);
+  assertEquals(observed.observedTimeS, 100);
+  assertAlmostEquals(
+    observed.maxDisplacement.magnitudeMm,
+    last.maxDisplacement.magnitudeMm,
+    1e-12,
+  );
+  assertAlmostEquals(observed.maxVonMises.mpa, last.maxVonMises.mpa, 1e-12);
+  assertCreepReachedRequestedDuration(observed.observedTimeS, 100);
+});
+
+Deno.test("parseDatLastIncrementObserved - rejects a premature final increment", () => {
+  const early = creepIncrementDat(1, "0.5000000E+02");
+  const observed = parseDatLastIncrementObserved(early);
+  assertEquals(observed.observedTimeS, 50);
+  let thrown: unknown;
+  try {
+    assertCreepReachedRequestedDuration(observed.observedTimeS, 100);
+  } catch (error) {
+    thrown = error;
+  }
+  assertEquals(thrown instanceof SolveError, true);
+  assertEquals((thrown as Error).message.includes("observed t=50"), true);
+  assertEquals((thrown as Error).message.includes("duration_s=100"), true);
+});
+
+Deno.test("parseDatLastIncrementObserved - rejects missing or disagreeing times", () => {
+  assertEquals(
+    parseDatLastIncrement(creepIncrementDat(1, "", {
+      displacementTime: "",
+      stressTime: "",
+    })).maxDisplacement.nodeId,
+    1,
+  );
+  let missing: unknown;
+  try {
+    parseDatLastIncrementObserved(creepIncrementDat(1, "", {
+      displacementTime: "",
+      stressTime: "",
+    }));
+  } catch (error) {
+    missing = error;
+  }
+  assertEquals(missing instanceof SolveError, true);
+
+  let inconsistent: unknown;
+  try {
+    parseDatLastIncrementObserved(creepIncrementDat(1, "0.1000000E+03", {
+      displacementTime: "0.1000000E+03",
+      stressTime: "0.5000000E+02",
+    }));
+  } catch (error) {
+    inconsistent = error;
+  }
+  assertEquals(inconsistent instanceof SolveError, true);
+  assertEquals((inconsistent as Error).message.includes("does not"), true);
+});
+
+Deno.test("creepSolveTextSummary reports observed time rather than the request", () => {
+  const text = creepSolveTextSummary({
+    stepSha256: "abc",
+    nodeCount: 10,
+    observedTimeS: 100,
+    maxDisplacementMm: 0.0129,
+    maxVonMisesMpa: 8.643,
+  });
+  assertEquals(text.includes("at observed t=100 s"), true);
+  assertEquals(text.includes("after 100 s creep"), false);
 });
 
 // ── Unit: buildCoupledThermalDeck ─────────────────────────────────────────────
