@@ -28,19 +28,23 @@ observations, never a safety, compliance, or requirement verdict.
 
 ## Quick start
 
-The previously published 0.7.1 multi-architecture HTTP image is addressed by
-`ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6`.
-It includes Deno 2.9.4, Gmsh 4.12, CalculiX 2.21, the 0.7.1 server, and the
-results viewer. Images exist for `linux/amd64` and `linux/arm64`. That digest
-identifies the prior 0.7.1 artifact only; it is not a 0.7.2 image identity.
+The published multi-architecture 0.7.2 release-code image is addressed by
+`ghcr.io/casys-ai/mcp-calculix@sha256:94005f1d099356e5ec21ca35f289b16e29264d50ccee6aa0497f5427a7340cf0`.
+It is available for `linux/amd64` and `linux/arm64`; its OCI version is
+`0.7.2` and its revision is
+`2d2f6d6172589d4891b37260b200fee6f1064efc`. Its entrypoint is
+`./docker-entrypoint.sh` and its default command is `http`.
+
+`ghcr.io/casys-ai/mcp-calculix:latest` is a mutable convenience tag, not an
+immutable image identity. Use the digest for a versioned deployment.
 
 ```bash
-docker pull ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6
+docker pull ghcr.io/casys-ai/mcp-calculix@sha256:94005f1d099356e5ec21ca35f289b16e29264d50ccee6aa0497f5427a7340cf0
 ```
 
-### Previously published 0.7.1 Docker image over HTTP
+### HTTP over Docker
 
-Run that image on loopback:
+Run the stateless HTTP mode on loopback:
 
 ```bash
 docker run --rm --name mcp-calculix \
@@ -48,7 +52,7 @@ docker run --rm --name mcp-calculix \
   -v /absolute/path/to/step-files:/inputs:ro \
   -v calculix-runs:/var/lib/mcp-calculix-runs \
   -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6 http
+  ghcr.io/casys-ai/mcp-calculix@sha256:94005f1d099356e5ec21ca35f289b16e29264d50ccee6aa0497f5427a7340cf0 http
 ```
 
 The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
@@ -83,12 +87,8 @@ Or run it from a source tree:
 deno run --allow-all server.ts --stdio
 ```
 
-To exercise the same source in Docker, build a local image and configure a
-desktop MCP host against it:
-
-```bash
-docker build -t mcp-calculix:local .
-```
+To use native stdio from the published image, pass `stdio` to Docker and keep
+stdin open with `-i`:
 
 ```json
 {
@@ -105,7 +105,7 @@ docker build -t mcp-calculix:local .
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "mcp-calculix:local",
+        "ghcr.io/casys-ai/mcp-calculix@sha256:94005f1d099356e5ec21ca35f289b16e29264d50ccee6aa0497f5427a7340cf0",
         "stdio"
       ]
     }
