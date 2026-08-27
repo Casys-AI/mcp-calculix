@@ -1,4 +1,4 @@
-/** Stateless HTTP MCP server for bounded deterministic CalculiX analyses. */
+/** MCP server for bounded deterministic CalculiX analyses. */
 
 import {
   McpApp,
@@ -10,7 +10,7 @@ import { CalculixToolsClient } from "./src/client.ts";
 import { CalculixRunStore, type RecordedStaticRun } from "./src/runs.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
-const VERSION = "0.7.1";
+const VERSION = "0.7.2";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 
@@ -62,7 +62,7 @@ export function createCalculixServer(
     backpressureStrategy: "queue",
     validateSchema: true,
     // Run evidence is registered both from the durable ledger at boot and
-    // immediately after a successful solve, including after startHttp().
+    // immediately after a successful solve, including after either transport starts.
     expectResources: true,
     instructions:
       "Bounded finite-element analysis of STEP parts: linear static, modal, " +
@@ -210,25 +210,34 @@ if (import.meta.main) {
       "[mcp-calculix] Results viewer is not built; run `deno task build:ui`.",
     );
   }
-  await app.startHttp({
-    port: cli.port,
-    hostname: cli.hostname,
-    corsOrigins: ["http://127.0.0.1", "http://localhost"],
-    onListen: ({ hostname, port }) => {
-      console.error(
-        `[mcp-calculix] Stateless MCP: http://${hostname}:${port}/mcp`,
-      );
-    },
-  });
+  if (cli.mode === "stdio") {
+    await app.start();
+  } else {
+    await app.startHttp({
+      port: cli.port,
+      hostname: cli.hostname,
+      corsOrigins: ["http://127.0.0.1", "http://localhost"],
+      onListen: ({ hostname, port }) => {
+        console.error(
+          `[mcp-calculix] Stateless MCP: http://${hostname}:${port}/mcp`,
+        );
+      },
+    });
+  }
 }
 
-export interface CliOptions {
-  port: number;
-  hostname: string;
-}
+export type CliOptions =
+  | { mode: "http"; port: number; hostname: string }
+  | { mode: "stdio" };
 
-/** Parse the deliberately small stateless HTTP command surface. */
+/** Parse the deliberately small HTTP-or-native-stdio command surface. */
 export function parseCli(args: readonly string[]): CliOptions {
+  if (args.includes("--stdio")) {
+    if (args.length !== 1) {
+      throw new TypeError("--stdio cannot be combined with HTTP options.");
+    }
+    return { mode: "stdio" };
+  }
   let port = integerEnv("MCP_PORT") ?? DEFAULT_PORT;
   let hostname = env("MCP_HOSTNAME") ?? DEFAULT_HOSTNAME;
   for (let index = 0; index < args.length; index++) {
@@ -245,7 +254,7 @@ export function parseCli(args: readonly string[]): CliOptions {
       throw new TypeError(`Unknown argument '${argument}'.`);
     }
   }
-  return { port, hostname };
+  return { mode: "http", port, hostname };
 }
 
 function positivePort(value: string | undefined, name: string): number {

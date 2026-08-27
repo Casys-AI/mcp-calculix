@@ -1,6 +1,6 @@
 {
   "name": "@casys/mcp-calculix",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": ["jsr:@casys/mcp-server"]
@@ -9,7 +9,7 @@
     "serve": "deno run --allow-all server.ts --port=3015",
     "build:ui": "deno run -A src/ui/results-viewer/build.ts",
     "build:ui:local": "MCP_VIEW_LOCAL_ROOT=../mcp-server/packages/view deno run -A src/ui/results-viewer/build.ts",
-    "check": "deno check mod.ts server.ts scripts/stdio-shim.ts",
+    "check": "deno check mod.ts server.ts",
     "lint": "deno lint",
     "fmt": "deno fmt --check deno.json mod.ts server.ts src/api src/client.ts src/results.ts src/tools src/ui/results-viewer/build.ts src/ui/results-viewer/src tests scripts",
     "release:check": "deno task fmt && deno task check && deno task lint && deno task test",
@@ -41,7 +41,7 @@
     ]
   },
   "imports": {
-    "@casys/mcp-server": "jsr:@casys/mcp-server@0.26.0",
+    "@casys/mcp-server": "jsr:@casys/mcp-server@0.26.1",
     "ajv": "npm:ajv@^8.17.1",
     "hono": "npm:hono@^4",
     "hono/cors": "npm:hono@^4/cors",

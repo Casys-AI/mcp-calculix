@@ -32,7 +32,7 @@ COPY deno.json deno.lock ./
 # pinned lock file. @casys/mcp-server pulls in hono, ajv, jose, otel, std/yaml
 # transitively; the remaining specifiers cover std and test-only packages.
 RUN deno cache --frozen \
-      "jsr:@casys/mcp-server@0.26.0" \
+      "jsr:@casys/mcp-server@0.26.1" \
       "npm:ajv@^8.17.1" \
       "npm:hono@^4" \
       "npm:hono@^4/cors" \
@@ -45,13 +45,13 @@ RUN deno cache --frozen \
 # --- Application source ---
 COPY . .
 
-# Resolve and cache the full local module graph from the HTTP entrypoint so
-# deno can start with --cached-only (no network at runtime).
-RUN deno cache --frozen server.ts scripts/stdio-shim.ts
+# Resolve and cache the full local module graph for both native transport modes
+# so deno can start with --cached-only (no network at runtime).
+RUN deno cache --frozen server.ts
 
 EXPOSE 3015
 
-# docker-entrypoint.sh and scripts/ are already present via COPY . .
+# docker-entrypoint.sh is present via COPY . .
 # Two modes: http (default) and stdio (docker run -i <image> stdio).
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["http"]

@@ -63,7 +63,7 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.7.1",
+      version: "0.7.2",
     });
 
     const listed = await rpc(url, "tools/list");
@@ -167,14 +167,16 @@ Deno.test("CalculiX remote viewer filesystem fetches HTTP resources actionably",
   );
 });
 
-Deno.test("CalculiX CLI accepts only stateless HTTP options", () => {
+Deno.test("CalculiX CLI selects native stdio or stateless HTTP", () => {
   assertEquals(parseCli(["--port", "3018", "--hostname=0.0.0.0"]), {
+    mode: "http",
     port: 3018,
     hostname: "0.0.0.0",
   });
+  assertEquals(parseCli(["--stdio"]), { mode: "stdio" });
   assertThrows(() => parseCli(["--http"]), TypeError, "Unknown argument");
   assertThrows(() => parseCli(["stdio"]), TypeError, "Unknown argument");
-  assertThrows(() => parseCli(["--stdio"]), TypeError, "Unknown argument");
+  assertThrows(() => parseCli(["--stdio", "--port", "3018"]), TypeError);
   assertThrows(() => parseCli(["--unknown"]), TypeError, "Unknown argument");
 });
 

@@ -4,6 +4,14 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-08-27
+
+### Changed
+
+- `server.ts --stdio` now uses the native, era-aware stdio transport. Legacy
+  `2025-06-18` initialization, tool calls, and resource routing run in the
+  server process; the stateless HTTP transport is unchanged.
+
 ## [0.7.1] - 2026-08-24
 
 ### Added

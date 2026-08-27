@@ -15,10 +15,11 @@ STEP part -> private SHA-256 snapshot -> Gmsh C3D4/C3D10 mesh
           -> code-generated CalculiX deck -> parsed physical observations
 ```
 
-Version `0.7.1` supports linear static, modal, linear buckling, Norton-law
-creep, and steady-state coupled temperature-displacement analyses. It also
-provides an identity-bound recorded variant of the static solve with exact MCP
-evidence resources and read-only recovery.
+Version `0.7.2` provides native, era-aware stdio and supports linear static,
+modal, linear buckling, Norton-law creep, and steady-state coupled
+temperature-displacement analyses. It also provides an identity-bound recorded
+variant of the static solve with exact MCP evidence resources and read-only
+recovery.
 
 This is a constrained analysis service, not a generic CalculiX shell. Callers
 provide STEP geometry and reviewed physical values; they cannot submit an
@@ -27,22 +28,67 @@ observations, never a safety, compliance, or requirement verdict.
 
 ## Quick start
 
-The published 0.7.1 multi-architecture image is addressed by
+The previously published 0.7.1 multi-architecture HTTP image is addressed by
 `ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6`.
 It includes Deno 2.9.4, Gmsh 4.12, CalculiX 2.21, the 0.7.1 server, and the
-results viewer. Images exist for `linux/amd64` and `linux/arm64`. The examples
-deliberately pin that immutable digest.
+results viewer. Images exist for `linux/amd64` and `linux/arm64`. That digest
+identifies the prior 0.7.1 artifact only; it is not a 0.7.2 image identity.
 
 ```bash
 docker pull ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6
 ```
 
-### stdio for desktop and classic MCP clients
+### Previously published 0.7.1 Docker image over HTTP
 
-The image's `stdio` mode starts the HTTP server privately and translates the
-classic MCP `initialize`/stdio protocol to the server's stateless protocol.
-Replace `/absolute/path/to/step-files` with a host directory containing the
-STEP files that the tools may read:
+Run that image on loopback:
+
+```bash
+docker run --rm --name mcp-calculix \
+  -p 127.0.0.1:3015:3015 \
+  -v /absolute/path/to/step-files:/inputs:ro \
+  -v calculix-runs:/var/lib/mcp-calculix-runs \
+  -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
+  ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6 http
+```
+
+The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
+`2026-07-28` MCP transport: each request carries its protocol version and
+client capabilities, and there is no connection handshake or session ID.
+
+A discovery smoke test:
+
+```bash
+curl -s -X POST http://127.0.0.1:3015/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: server/discover' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+### Native stdio in 0.7.2
+
+Version 0.7.2 starts the era-aware stdio transport directly. It accepts classic
+`2025-06-18` initialization and keeps JSON-RPC on stdout.
+
+Run the 0.7.2 JSR entrypoint:
+
+```bash
+deno run --allow-all jsr:@casys/mcp-calculix@0.7.2/server --stdio
+```
+
+Or run it from a source tree:
+
+```bash
+deno run --allow-all server.ts --stdio
+```
+
+To exercise the same source in Docker, build a local image and configure a
+desktop MCP host against it:
+
+```bash
+docker build -t mcp-calculix:local .
+```
 
 ```json
 {
@@ -59,7 +105,7 @@ STEP files that the tools may read:
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6",
+        "mcp-calculix:local",
         "stdio"
       ]
     }
@@ -67,45 +113,9 @@ STEP files that the tools may read:
 }
 ```
 
-Tool calls must use the path visible *inside* the container, for example
-`/inputs/bracket.step`, not the host path. Keep one live writer per recorded-run
-volume; do not point multiple running server containers at the same
-`calculix-runs` volume.
-
-From a source checkout, the same shim can be run with:
-
-```bash
-deno run --allow-all scripts/stdio-shim.ts
-```
-
-### HTTP
-
-Run the published image on loopback:
-
-```bash
-docker run --rm --name mcp-calculix \
-  -p 127.0.0.1:3015:3015 \
-  -v /absolute/path/to/step-files:/inputs:ro \
-  -v calculix-runs:/var/lib/mcp-calculix-runs \
-  -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix@sha256:b612dc5854f5ac7dce1425f540ee33179d0e32c1e86b4e4c805b4ecf4a379da6 http
-```
-
-The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
-`2026-07-28` MCP transport: each request carries its protocol version and
-client capabilities, and there is no connection handshake or session ID. Use
-the stdio shim above for clients that only implement a classic MCP revision.
-
-A discovery smoke test:
-
-```bash
-curl -s -X POST http://127.0.0.1:3015/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'MCP-Protocol-Version: 2026-07-28' \
-  -H 'Mcp-Method: server/discover' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
-```
+Tool calls must use paths visible inside the container, such as
+`/inputs/bracket.step`. Keep one live writer per recorded-run volume; do not point
+multiple running server containers at the same `calculix-runs` volume.
 
 ### Native Deno run
 
@@ -116,13 +126,13 @@ apt install gmsh calculix-ccx     # Debian/Ubuntu
 brew install deno gmsh calculix   # macOS/Homebrew
 ```
 
-Run the published package from JSR:
+Run the 0.7.2 JSR entrypoint over HTTP:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.7.1/server --port=3015
+deno run --allow-all jsr:@casys/mcp-calculix@0.7.2/server --port=3015
 ```
 
-From a checkout:
+From a source tree:
 
 ```bash
 deno task build:ui
@@ -138,7 +148,7 @@ The JSR export also exposes the tool definitions, strict result schemas, deck
 builders, parsers, and recorded-run store for Deno applications:
 
 ```bash
-deno add jsr:@casys/mcp-calculix@0.7.1
+deno add jsr:@casys/mcp-calculix@0.7.2
 ```
 
 ## Tool surface
@@ -165,7 +175,7 @@ static solve requires it, together with a caller-generated `request_id`.
 
 Only `calculix_solve_static_recorded` creates durable run evidence. Modal,
 buckling, creep, coupled-thermal, and ordinary static results are closed MCP
-results but do not create recorded-run resources in `0.7.1`.
+results but do not create recorded-run resources in `0.7.2`.
 
 ## Geometry, selections, loads, and units
 
@@ -175,7 +185,7 @@ results but do not create recorded-run resources in `0.7.1`.
   server cannot read a file that exists only on the MCP client's machine; mount
   or stage it where the server can see it.
 - The generated Gmsh program publishes volume `1` as the `PART` physical
-  volume. Treat `0.7.1` as a single-part, single-volume contract. Assemblies and
+  volume. Treat `0.7.2` as a single-part, single-volume contract. Assemblies and
   multi-solid STEP models are not advertised inputs.
 - `mesh_size_mm` has no default. Choose it relative to the smallest relevant
   feature and perform a mesh-convergence study before relying on a result.
@@ -525,7 +535,7 @@ SysON evaluation. It does **not** call this MCP server and does not claim
 static `@3` proof, and an isolated `@3` result must not be relabelled as a fleet
 MCP run.
 
-## Honest limits in 0.7.1
+## Honest limits in 0.7.2
 
 - One advertised STEP part and one volume (`PART = {1}`), one isotropic
   material, and C3D4/C3D10 tetrahedra. No assemblies, shells, beams, composite
@@ -602,15 +612,15 @@ CALCULIX_RUN_NATIVE=1 deno task test
 ```
 
 `deno task release:check` runs formatting, type checking, linting, wire/contract
-tests, recorded-run recovery tests, parser fixtures, stdio-shim tests, and
+tests, recorded-run recovery tests, parser fixtures, native stdio tests, and
 viewer-model tests. Native end-to-end Gmsh/CalculiX tests are opt-in so a
 checkout without solver binaries still verifies the pure and wire contracts.
 
 Key files:
 
 ```text
-server.ts                          HTTP application, tool/resource registration
-scripts/stdio-shim.ts              classic stdio -> stateless HTTP adapter
+server.ts                          HTTP and native stdio application, tool/resource registration
+tests/stdio_test.ts                native stdio lifecycle and resource wire coverage
 src/api/gmsh.ts                    STEP meshing and bounding-box node sets
 src/api/ccx.ts                     deterministic decks, subprocess bridge, parsers
 src/results.ts                     closed result schemas
