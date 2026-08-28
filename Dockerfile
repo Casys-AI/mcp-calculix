@@ -7,7 +7,8 @@
 FROM ubuntu:24.04
 
 # --- Deno runtime ---
-COPY --from=denoland/deno:bin-2.9.4 /deno /usr/local/bin/deno
+# Official Deno 2.9.6 OCI index, verified for linux/amd64 and linux/arm64.
+COPY --from=denoland/deno:bin-2.9.6@sha256:4cf0029b9aeeeed5efcbb71828737f0d7c8c8a20072df960e51a5679ef0d21ba /deno /usr/local/bin/deno
 
 # --- System solvers (gmsh + ccx) ---
 RUN apt-get update \

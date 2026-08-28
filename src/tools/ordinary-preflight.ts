@@ -9,6 +9,7 @@ import type { FaceSelection } from "../api/gmsh.ts";
 export type OrdinaryInputErrorCode =
   | "invalid_input"
   | "unknown_input_field"
+  | "timeout_out_of_range"
   | "zero_reference_load";
 
 /**
@@ -38,6 +39,13 @@ export const SELECTION_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,60}$/;
 export const SHA256_HEX_PATTERN = /^[a-fA-F0-9]{64}$/;
 export const DEFAULT_ELEMENT_ORDER = 2 as const;
 export const DEFAULT_TIMEOUT_MS = 120_000;
+/**
+ * Maximum wall-clock budget for each external Gmsh or CalculiX invocation in
+ * a non-recorded solve. It deliberately matches the documented default: an
+ * ordinary request cannot extend native subprocess lifetime through an
+ * arbitrarily large timeout_ms value.
+ */
+export const MAX_ORDINARY_SOLVE_TIMEOUT_MS = 120_000;
 export const MAX_MESH_PREFLIGHT_SELECTIONS = 32;
 export const MAX_MESH_PREFLIGHT_TIMEOUT_MS = 120_000;
 
@@ -107,6 +115,7 @@ export function tightenCommonOrdinaryInputSchema(
       ...properties.timeout_ms,
       type: "integer",
       minimum: 1,
+      maximum: MAX_ORDINARY_SOLVE_TIMEOUT_MS,
     };
   }
 
@@ -218,10 +227,16 @@ export function parseOrdinarySolveArgs(
   }
 
   const timeoutMs = args.timeout_ms ?? DEFAULT_TIMEOUT_MS;
-  if (!Number.isSafeInteger(timeoutMs) || (timeoutMs as number) < 1) {
+  if (
+    !Number.isSafeInteger(timeoutMs) || (timeoutMs as number) < 1 ||
+    (timeoutMs as number) > MAX_ORDINARY_SOLVE_TIMEOUT_MS
+  ) {
     throw fail(
       toolName,
-      `timeout_ms must be a positive integer, got ${timeoutMs}.`,
+      `timeout_ms must be a positive integer no greater than ` +
+        `${MAX_ORDINARY_SOLVE_TIMEOUT_MS}, got ${timeoutMs}.`,
+      "timeout_out_of_range",
+      "timeout_ms",
     );
   }
 

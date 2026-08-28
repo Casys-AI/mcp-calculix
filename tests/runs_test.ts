@@ -1429,6 +1429,16 @@ Deno.test("recorded input/output schemas are closed at every governed nesting", 
     assertEquals(validateInput({ ...validInput, mesh_size_mm: 0 }), false);
     assertEquals(validateInput({ ...validInput, timeout_ms: 1.5 }), false);
     assertEquals(
+      validateInput({ ...validInput, timeout_ms: 120_001 }),
+      true,
+      "recorded static timeout has no ordinary-solve maximum",
+    );
+    const timeoutSchema = (tool.inputSchema.properties as Record<
+      string,
+      Record<string, unknown>
+    >).timeout_ms;
+    assertEquals("maximum" in timeoutSchema, false);
+    assertEquals(
       validateInput({ ...validInput, material: { e_mpa: 70_000, nu: 0.5 } }),
       false,
     );

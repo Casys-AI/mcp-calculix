@@ -2,6 +2,20 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [0.8.2] - 2026-08-28
+
+### Changed
+
+- Ordinary static, modal, buckling, creep, and coupled-thermal solves now cap
+  each external Gmsh or CalculiX invocation at 120000 ms. Their schemas expose
+  the `MAX_ORDINARY_SOLVE_TIMEOUT_MS` bound, and direct handlers return the
+  typed `timeout_out_of_range` error at `timeout_ms` before snapshotting or
+  native execution.
+- The release image and tag workflows use official Deno 2.9.6 exactly. The
+  Dockerfile pins the official multi-architecture `bin-2.9.6` OCI index for
+  linux/amd64 and linux/arm64; CI installs `v2.9.6` rather than a moving major
+  range.
+
 ## [0.8.1] - 2026-08-28
 
 ### Changed

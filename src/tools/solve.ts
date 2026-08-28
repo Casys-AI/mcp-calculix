@@ -187,7 +187,7 @@ export const solveTools: CalculixTool[] = [
         timeout_ms: {
           type: "number",
           description:
-            "Time limit per external run (mesh, solve) in ms, default 120000",
+            "Time limit per external run (mesh, solve) in ms, default and maximum 120000.",
         },
       },
       required: [
@@ -651,7 +651,7 @@ async function resolveExecutionIdentity(): Promise<
   ]);
   return {
     schema_version: "1.0",
-    server: { package: "@casys/mcp-calculix", version: "0.8.1" },
+    server: { package: "@casys/mcp-calculix", version: "0.8.2" },
     method: { id: "calculix_solve_static_recorded", version: "1.0" },
     lowering: { id: "calculix.static.abaqus-deck", version: "1.0" },
     engines: {
@@ -729,10 +729,14 @@ function recordedStaticInputSchema(): Record<string, unknown> {
     type: "integer",
   };
   properties.timeout_ms = {
-    ...(properties.timeout_ms as Record<string, unknown>),
     type: "integer",
     minimum: 1,
+    description:
+      "Time limit per external run (mesh, solve) in ms, default 120000.",
   };
+  // Recorded requests retain their existing durable contract. The ordinary
+  // solve cap is enforced only by parseOrdinarySolveArgs, which this handler
+  // intentionally does not use.
   const material = properties.material as Record<string, unknown>;
   const materialProperties = material.properties as Record<string, unknown>;
   materialProperties.e_mpa = {

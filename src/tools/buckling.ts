@@ -179,7 +179,7 @@ export const buckleTools: CalculixTool[] = [
         timeout_ms: {
           type: "number",
           description:
-            "Time limit per external run (mesh, solve) in ms, default 120000.",
+            "Time limit per external run (mesh, solve) in ms, default and maximum 120000.",
         },
       },
       required: [

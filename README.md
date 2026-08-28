@@ -14,7 +14,7 @@ STEP part -> private SHA-256 snapshot -> Gmsh C3D4/C3D10 mesh
           -> code-generated CalculiX deck -> parsed physical observations
 ```
 
-Version `0.8.1` provides native, era-aware stdio and supports linear static,
+Version `0.8.2` provides native, era-aware stdio and supports linear static,
 modal, linear buckling, Norton-law creep, and steady-state coupled
 temperature-displacement analyses. It also provides an identity-bound recorded
 variant of the static solve with exact MCP evidence resources and read-only
@@ -33,7 +33,7 @@ The qualified multi-architecture deployment image is
 It is available for `linux/amd64` and `linux/arm64`; its entrypoint is
 `./docker-entrypoint.sh` and its default command is `http`.
 
-`ghcr.io/casys-ai/mcp-calculix:0.8.1` is a mutable discovery tag, not a
+`ghcr.io/casys-ai/mcp-calculix:0.8.2` is a mutable discovery tag, not a
 qualified deployment identity. `ghcr.io/casys-ai/mcp-calculix:latest` is also
 mutable. Use a tag only to discover a release, then deploy the published index
 digest above.
@@ -79,10 +79,10 @@ curl -s -X POST http://127.0.0.1:3015/mcp \
 The server starts the era-aware stdio transport directly. It accepts classic
 `2025-06-18` initialization and keeps JSON-RPC on stdout.
 
-Run the 0.8.1 JSR entrypoint:
+Run the 0.8.2 JSR entrypoint:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.1/server --stdio
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.2/server --stdio
 ```
 
 Or run it from a source tree:
@@ -123,17 +123,17 @@ point multiple running server containers at the same `calculix-runs` volume.
 
 ### Native Deno run
 
-Install Deno 2, Gmsh, and CalculiX first:
+Install Deno 2.9.6, Gmsh, and CalculiX first:
 
 ```bash
 apt install gmsh calculix-ccx     # Debian/Ubuntu
 brew install deno gmsh calculix   # macOS/Homebrew
 ```
 
-Run the 0.8.1 JSR entrypoint over HTTP:
+Run the 0.8.2 JSR entrypoint over HTTP:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.1/server --port=3015
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.2/server --port=3015
 ```
 
 From a source tree:
@@ -152,7 +152,7 @@ The JSR export also exposes the tool definitions, strict result schemas, deck
 builders, parsers, and recorded-run store for Deno applications:
 
 ```bash
-deno add jsr:@casys/mcp-calculix@0.8.1
+deno add jsr:@casys/mcp-calculix@0.8.2
 ```
 
 ## Tool surface
@@ -192,7 +192,7 @@ call, so it does not add recorded-run resources or make a physical claim.
 
 Only `calculix_solve_static_recorded` creates durable run evidence. Modal,
 buckling, creep, coupled-thermal, and ordinary static results are closed MCP
-results but do not create recorded-run resources in `0.8.1`.
+results but do not create recorded-run resources in `0.8.2`.
 
 ## Geometry, selections, loads, and units
 
@@ -202,7 +202,7 @@ results but do not create recorded-run resources in `0.8.1`.
   server cannot read a file that exists only on the MCP client's machine; mount
   or stage it where the server can see it.
 - The generated Gmsh program publishes volume `1` as the `PART` physical volume.
-  Treat `0.8.1` as a single-part, single-volume contract. Assemblies and
+  Treat `0.8.2` as a single-part, single-volume contract. Assemblies and
   multi-solid STEP models are not advertised inputs.
 - `mesh_size_mm` has no default. Choose it relative to the smallest relevant
   feature and perform a mesh-convergence study before relying on a result.
@@ -579,7 +579,7 @@ claim `mcp-calculix` provenance. A successful fleet solve is therefore not a
 product static `@3` proof, and an isolated `@3` result must not be relabelled as
 a fleet MCP run.
 
-## Honest limits in 0.8.1
+## Honest limits in 0.8.2
 
 - One advertised STEP part and one volume (`PART = {1}`), one isotropic
   material, and C3D4/C3D10 tetrahedra. No assemblies, shells, beams, composite
@@ -638,9 +638,11 @@ the deck/parser change with a real CalculiX fixture plus an opt-in native test.
   expose the endpoint directly to an untrusted network.
 - STEP paths containing quotes, backslashes, or newlines are rejected before
   they can be embedded in Gmsh input.
-- External mesh and solve calls default to a `120000` ms timeout. Fine meshes,
-  modal solves, and creep analyses may require an explicit larger timeout and
-  appropriate host resource limits.
+- Ordinary static, modal, buckling, creep, and coupled-thermal solves cap each
+  external Gmsh or CalculiX invocation at `120000` ms
+  (`MAX_ORDINARY_SOLVE_TIMEOUT_MS`). The default is the same; a larger
+  `timeout_ms` is rejected with structured `timeout_out_of_range` and
+  `inputPath: "timeout_ms"` before a STEP snapshot or native subprocess.
 - The server allows four concurrent calls and queues backpressure. Recorded
   completion/retention still requires the one-writer-per-volume deployment rule
   described above.

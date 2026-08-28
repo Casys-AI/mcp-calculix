@@ -4,12 +4,16 @@
  */
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { InputArtifactError } from "../src/api/input-artifact.ts";
 import { buckleTools } from "../src/tools/buckling.ts";
 import { coupledThermalTools } from "../src/tools/coupled_thermal.ts";
 import { creepTools } from "../src/tools/creep.ts";
 import { modalTools } from "../src/tools/modal.ts";
-import { OrdinaryInputError } from "../src/tools/ordinary-preflight.ts";
+import {
+  MAX_ORDINARY_SOLVE_TIMEOUT_MS,
+  OrdinaryInputError,
+} from "../src/tools/ordinary-preflight.ts";
 import { solveTools } from "../src/tools/solve.ts";
 import type { CalculixTool } from "../src/tools/types.ts";
 
@@ -125,6 +129,11 @@ Deno.test("ordinary input schemas tighten shared physical bounds", () => {
     assertEquals(
       (properties.timeout_ms as { minimum: number }).minimum,
       1,
+      name,
+    );
+    assertEquals(
+      (properties.timeout_ms as { maximum: number }).maximum,
+      MAX_ORDINARY_SOLVE_TIMEOUT_MS,
       name,
     );
     const material = properties.material as {
@@ -286,6 +295,58 @@ Deno.test("invalid material, boxes, names, timeout, digest, and element_order fa
         false,
         `${name} ${needle}`,
       );
+    }
+  }
+});
+
+Deno.test("ordinary solve timeout is bounded in schema and direct handlers", async () => {
+  for (const { name, tools, args } of ORDINARY) {
+    const validateSchema = new Ajv2020({ strict: false }).compile(
+      schemaOf(tools, name),
+    );
+    assertEquals(
+      validateSchema({
+        ...structuredClone(args),
+        timeout_ms: MAX_ORDINARY_SOLVE_TIMEOUT_MS,
+      }),
+      true,
+      `${name} schema accepts the maximum`,
+    );
+
+    const atBoundary = await assertRejects(
+      async () =>
+        await handler(tools, name)({
+          ...structuredClone(args),
+          timeout_ms: MAX_ORDINARY_SOLVE_TIMEOUT_MS,
+        }),
+      InputArtifactError,
+      "not found",
+    );
+    assert(atBoundary instanceof InputArtifactError, name);
+
+    for (
+      const timeoutMs of [
+        MAX_ORDINARY_SOLVE_TIMEOUT_MS + 1,
+        Number.MAX_SAFE_INTEGER,
+      ]
+    ) {
+      assertEquals(
+        validateSchema({ ...structuredClone(args), timeout_ms: timeoutMs }),
+        false,
+        `${name} schema rejects ${timeoutMs}`,
+      );
+      const error = await assertRejects(
+        async () =>
+          await handler(tools, name)({
+            ...structuredClone(args),
+            timeout_ms: timeoutMs,
+          }),
+        OrdinaryInputError,
+        "timeout_ms",
+      );
+      assertEquals(error.code, "timeout_out_of_range", name);
+      assertEquals(error.inputPath, "timeout_ms", name);
+      assertEquals(error.message.includes("not found"), false, name);
     }
   }
 });

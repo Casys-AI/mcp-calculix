@@ -215,8 +215,8 @@ export const creepTools: CalculixTool[] = [
         timeout_ms: {
           type: "number",
           description:
-            "Time limit per external run (mesh, solve) in ms, default 120000. " +
-            "Creep solves with many increments or fine meshes may need more.",
+            "Time limit per external run (mesh, solve) in ms, default and maximum 120000. " +
+            "Refine the bounded model rather than extending native process lifetime.",
         },
       },
       required: [

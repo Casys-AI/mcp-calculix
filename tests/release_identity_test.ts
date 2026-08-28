@@ -8,7 +8,7 @@ import {
 
 const PROTOCOL_VERSION = "2026-07-28";
 const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
-const CURRENT_RELEASE_VERSION = "0.8.1";
+const CURRENT_RELEASE_VERSION = "0.8.2";
 const CURRENT_RELEASE_INDEX_DIGEST =
   "c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4";
 const CURRENT_DEPLOYMENT_IMAGE =
