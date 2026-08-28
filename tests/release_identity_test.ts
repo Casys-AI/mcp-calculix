@@ -10,7 +10,7 @@ const PROTOCOL_VERSION = "2026-07-28";
 const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
 const CURRENT_RELEASE_VERSION = "0.8.2";
 const CURRENT_RELEASE_INDEX_DIGEST =
-  "c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4";
+  "ea933089d0941dd7c45d7e00a825be64c412edbb334a05dc568745ce885abfc8";
 const CURRENT_DEPLOYMENT_IMAGE =
   `ghcr.io/casys-ai/mcp-calculix@sha256:${CURRENT_RELEASE_INDEX_DIGEST}`;
 const CURRENT_DISCOVERY_TAG =
