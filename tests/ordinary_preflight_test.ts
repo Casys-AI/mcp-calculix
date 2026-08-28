@@ -144,6 +144,66 @@ Deno.test("ordinary input schemas tighten shared physical bounds", () => {
   }
 });
 
+Deno.test("ordinary input schemas close every documented object", () => {
+  for (const { name, tools } of ORDINARY) {
+    assertObjectSchemasClosed(schemaOf(tools, name), name);
+  }
+});
+
+Deno.test("ordinary handlers reject unknown documented-input fields before snapshot", async () => {
+  const mutations: Array<{
+    path: string;
+    mutate: (value: Record<string, unknown>) => void;
+  }> = [
+    {
+      path: "unexpected",
+      mutate: (value) => value.unexpected = true,
+    },
+    {
+      path: "material.unexpected",
+      mutate: (value) => {
+        (value.material as Record<string, unknown>).unexpected = true;
+      },
+    },
+    {
+      path: "selections[0].unexpected",
+      mutate: (value) => {
+        (value.selections as Array<Record<string, unknown>>)[0].unexpected =
+          true;
+      },
+    },
+    {
+      path: "selections[0].box.unexpected",
+      mutate: (value) => {
+        (((value.selections as Array<Record<string, unknown>>)[0]
+          .box) as Record<
+            string,
+            unknown
+          >).unexpected = true;
+      },
+    },
+  ];
+
+  for (const { name, tools, args } of ORDINARY) {
+    for (const { path, mutate } of mutations) {
+      const invalid = structuredClone(args);
+      mutate(invalid);
+      const error = await assertRejects(
+        async () => await handler(tools, name)(invalid),
+        OrdinaryInputError,
+        path,
+      );
+      assertEquals(error.code, "unknown_input_field", `${name} ${path}`);
+      assertEquals(error.inputPath, path, `${name} ${path}`);
+      assertEquals(
+        error.message.includes("not found"),
+        false,
+        `${name} ${path}`,
+      );
+    }
+  }
+});
+
 Deno.test("ordinary solves still snapshot a missing STEP when inputs are otherwise valid", async () => {
   for (const { name, tools, args } of ORDINARY) {
     await assertRejects(
@@ -277,6 +337,42 @@ Deno.test("undeclared and overlapping mechanical names still fail before snapsho
   );
 });
 
+Deno.test("buckling rejects an all-zero reference preload before snapshot", async () => {
+  const error = await assertRejects(
+    async () =>
+      await handler(buckleTools, "calculix_solve_buckling")(
+        payload({
+          loads: [{ selection: "LOADED", force_n: [0, 0, 0] }],
+        }),
+      ),
+    OrdinaryInputError,
+    "non-zero force_n",
+  );
+  assertEquals(error.code, "zero_reference_load");
+  assertEquals(error.inputPath, "loads");
+});
+
+Deno.test("coupled thermal rejects an unknown thermal boundary field before snapshot", async () => {
+  const error = await assertRejects(
+    async () =>
+      await handler(coupledThermalTools, "calculix_solve_coupled_thermal")({
+        ...structuredClone(COMMON),
+        conductivity_w_mk: 167,
+        expansion_per_k: 23.6e-6,
+        reference_temperature_c: 20,
+        thermal_bcs: [{
+          selection: "FIXED",
+          temperature_c: 20,
+          unexpected: true,
+        }],
+      }),
+    OrdinaryInputError,
+    "thermal_bcs[0].unexpected",
+  );
+  assertEquals(error.code, "unknown_input_field");
+  assertEquals(error.inputPath, "thermal_bcs[0].unexpected");
+});
+
 Deno.test("coupled thermal still allows a thermal BC on a mechanically fixed selection", async () => {
   const error = await assertRejects(
     async () =>
@@ -292,3 +388,21 @@ Deno.test("coupled thermal still allows a thermal BC on a mechanically fixed sel
   );
   assert(error instanceof InputArtifactError);
 });
+
+function assertObjectSchemasClosed(value: unknown, name: string): void {
+  if (!isRecord(value)) return;
+  if (value.type === "object") {
+    assertEquals(value.additionalProperties, false, name);
+  }
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child)) {
+      for (const item of child) assertObjectSchemasClosed(item, name);
+    } else {
+      assertObjectSchemasClosed(child, name);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

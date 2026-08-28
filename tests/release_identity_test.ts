@@ -91,6 +91,31 @@ Deno.test(
       ),
       expected,
     );
+
+    const citation = await Deno.readTextFile(
+      new URL("../CITATION.cff", import.meta.url),
+    );
+    assertReleaseVersion(
+      "citation metadata",
+      capturedVersion(
+        citation,
+        /^version:\s*([^\s]+)\s*$/m,
+        "citation version",
+      ),
+      expected,
+    );
+
+    const readme = await Deno.readTextFile(
+      new URL("../README.md", import.meta.url),
+    );
+    assert(
+      readme.includes(`Version \`${expected}\``),
+      "README must describe the package version declared in deno.json.",
+    );
+    assert(
+      readme.includes(`mcp-calculix:${expected}`),
+      "README Docker examples must use the package release tag.",
+    );
   },
 );
 

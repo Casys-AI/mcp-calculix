@@ -15,6 +15,7 @@
 
 import type { CalculixTool } from "./types.ts";
 import {
+  closeObjectSchemas,
   parseOrdinarySolveArgs,
   tightenCommonOrdinaryInputSchema,
 } from "./ordinary-preflight.ts";
@@ -650,7 +651,7 @@ async function resolveExecutionIdentity(): Promise<
   ]);
   return {
     schema_version: "1.0",
-    server: { package: "@casys/mcp-calculix", version: "0.8.0" },
+    server: { package: "@casys/mcp-calculix", version: "0.8.1" },
     method: { id: "calculix_solve_static_recorded", version: "1.0" },
     lowering: { id: "calculix.static.abaqus-deck", version: "1.0" },
     engines: {
@@ -776,28 +777,6 @@ function recordedStaticInputSchema(): Record<string, unknown> {
     "expected_step_sha256",
     "request_id",
   ];
-  return schema;
-}
-
-function closeObjectSchemas(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new TypeError("Expected an object JSON Schema.");
-  }
-  const schema = value as Record<string, unknown>;
-  for (const [key, child] of Object.entries(schema)) {
-    if (Array.isArray(child)) {
-      schema[key] = child.map((item) =>
-        item && typeof item === "object" && !Array.isArray(item)
-          ? closeObjectSchemas(item)
-          : item
-      );
-    } else if (child && typeof child === "object") {
-      schema[key] = closeObjectSchemas(child);
-    }
-  }
-  if (schema.type === "object" && schema.additionalProperties === undefined) {
-    schema.additionalProperties = false;
-  }
   return schema;
 }
 

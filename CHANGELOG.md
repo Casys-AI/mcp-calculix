@@ -2,6 +2,19 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [0.8.1] - 2026-08-28
+
+### Changed
+
+- Every ordinary-solve input schema is recursively closed. Direct handler calls
+  now reject unknown root and nested object fields before a STEP snapshot or
+  native subprocess, with a stable input-error code and precise field path.
+- Buckling requires at least one non-zero component across its reference loads;
+  all-zero preload vectors have no critical-load-factor interpretation.
+- Tag release workflows install and execute both Gmsh and CalculiX native test
+  coverage. Docker publication additionally runs the static physical-observation
+  smoke in the image built for release.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added

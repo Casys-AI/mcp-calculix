@@ -14,7 +14,7 @@ STEP part -> private SHA-256 snapshot -> Gmsh C3D4/C3D10 mesh
           -> code-generated CalculiX deck -> parsed physical observations
 ```
 
-Version `0.8.0` provides native, era-aware stdio and supports linear static,
+Version `0.8.1` provides native, era-aware stdio and supports linear static,
 modal, linear buckling, Norton-law creep, and steady-state coupled
 temperature-displacement analyses. It also provides an identity-bound recorded
 variant of the static solve with exact MCP evidence resources and read-only
@@ -29,19 +29,20 @@ observations, never a safety, compliance, or requirement verdict.
 ## Quick start
 
 The qualified multi-architecture release image is
-`ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395`.
-It is available for `linux/amd64` and `linux/arm64`; its entrypoint is
-`./docker-entrypoint.sh` and its default command is `http`.
+`ghcr.io/casys-ai/mcp-calculix:0.8.1`. It is available for `linux/amd64` and
+`linux/arm64`; its entrypoint is `./docker-entrypoint.sh` and its default
+command is `http`.
 
 `ghcr.io/casys-ai/mcp-calculix:latest` is a mutable convenience tag, not an
-immutable image identity. Use the digest for a versioned deployment.
+immutable image identity. Resolve the `0.8.1` manifest to its published digest
+and use that digest for a deployed environment.
 
 Ephemeral STEP and mesh directories are removed on a best-effort basis after
 each call. A cleanup failure does not turn a completed preflight into durable
 evidence; operators should monitor and reclaim stale OS temporary directories.
 
 ```bash
-docker pull ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395
+docker pull ghcr.io/casys-ai/mcp-calculix:0.8.1
 ```
 
 ### HTTP over Docker
@@ -54,7 +55,7 @@ docker run --rm --name mcp-calculix \
   -v /absolute/path/to/step-files:/inputs:ro \
   -v calculix-runs:/var/lib/mcp-calculix-runs \
   -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395 http
+  ghcr.io/casys-ai/mcp-calculix:0.8.1 http
 ```
 
 The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
@@ -77,10 +78,10 @@ curl -s -X POST http://127.0.0.1:3015/mcp \
 The server starts the era-aware stdio transport directly. It accepts classic
 `2025-06-18` initialization and keeps JSON-RPC on stdout.
 
-Run the 0.8.0 JSR entrypoint:
+Run the 0.8.1 JSR entrypoint:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.0/server --stdio
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.1/server --stdio
 ```
 
 Or run it from a source tree:
@@ -107,7 +108,7 @@ stdin open with `-i`:
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395",
+        "ghcr.io/casys-ai/mcp-calculix:0.8.1",
         "stdio"
       ]
     }
@@ -128,10 +129,10 @@ apt install gmsh calculix-ccx     # Debian/Ubuntu
 brew install deno gmsh calculix   # macOS/Homebrew
 ```
 
-Run the 0.8.0 JSR entrypoint over HTTP:
+Run the 0.8.1 JSR entrypoint over HTTP:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.0/server --port=3015
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.1/server --port=3015
 ```
 
 From a source tree:
@@ -150,7 +151,7 @@ The JSR export also exposes the tool definitions, strict result schemas, deck
 builders, parsers, and recorded-run store for Deno applications:
 
 ```bash
-deno add jsr:@casys/mcp-calculix@0.8.0
+deno add jsr:@casys/mcp-calculix@0.8.1
 ```
 
 ## Tool surface
@@ -173,8 +174,10 @@ computes SHA-256 from the bytes that Gmsh will consume. Ordinary solves validate
 shared physical inputs first — selection names and boxes, mesh size, element
 order, timeout, material bounds, digest format, and declared fixed/load/BC
 references — and reject those errors before the snapshot, Gmsh, or CalculiX.
-Non-recorded solves accept `expected_step_sha256` optionally. The recorded
-static solve requires it, together with a caller-generated `request_id`.
+Every documented input object is closed: unknown fields are refused with the
+precise input path rather than being silently ignored. Non-recorded solves
+accept `expected_step_sha256` optionally. The recorded static solve requires it,
+together with a caller-generated `request_id`.
 
 `calculix_mesh_preflight` uses the same private snapshot and Gmsh lowering,
 without material inputs, boundary conditions, deck generation, or `ccx`. It is
@@ -188,7 +191,7 @@ call, so it does not add recorded-run resources or make a physical claim.
 
 Only `calculix_solve_static_recorded` creates durable run evidence. Modal,
 buckling, creep, coupled-thermal, and ordinary static results are closed MCP
-results but do not create recorded-run resources in `0.8.0`.
+results but do not create recorded-run resources in `0.8.1`.
 
 ## Geometry, selections, loads, and units
 
@@ -198,7 +201,7 @@ results but do not create recorded-run resources in `0.8.0`.
   server cannot read a file that exists only on the MCP client's machine; mount
   or stage it where the server can see it.
 - The generated Gmsh program publishes volume `1` as the `PART` physical volume.
-  Treat `0.8.0` as a single-part, single-volume contract. Assemblies and
+  Treat `0.8.1` as a single-part, single-volume contract. Assemblies and
   multi-solid STEP models are not advertised inputs.
 - `mesh_size_mm` has no default. Choose it relative to the smallest relevant
   feature and perform a mesh-convergence study before relying on a result.
@@ -360,7 +363,9 @@ fields or effective modal mass.
 The loads define the reference static preload. For each returned factor
 `lambda`, the corresponding critical load is `lambda * applied_load`; a first
 factor below `1` means the reference load already exceeds the linear critical
-load estimate.
+load estimate. The reference loads must contain at least one non-zero force
+component; an all-zero preload has no buckling interpretation and is refused
+before meshing.
 
 ```json
 {
@@ -573,7 +578,7 @@ claim `mcp-calculix` provenance. A successful fleet solve is therefore not a
 product static `@3` proof, and an isolated `@3` result must not be relabelled as
 a fleet MCP run.
 
-## Honest limits in 0.8.0
+## Honest limits in 0.8.1
 
 - One advertised STEP part and one volume (`PART = {1}`), one isotropic
   material, and C3D4/C3D10 tetrahedra. No assemblies, shells, beams, composite
@@ -646,13 +651,16 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 ```bash
 deno task build:ui
 deno task release:check
-CALCULIX_RUN_NATIVE=1 deno task test
+deno task test:native
 ```
 
 `deno task release:check` runs formatting, type checking, linting, wire/contract
 tests, recorded-run recovery tests, parser fixtures, native stdio tests, and
 viewer-model tests. Native end-to-end Gmsh/CalculiX tests are opt-in so a
-checkout without solver binaries still verifies the pure and wire contracts.
+checkout without solver binaries still verifies the pure and wire contracts. Tag
+workflows install both `gmsh` and `calculix-ccx`, run `deno task test:native`,
+and run a native static solve smoke inside the built release image before
+publishing it.
 
 Key files:
 

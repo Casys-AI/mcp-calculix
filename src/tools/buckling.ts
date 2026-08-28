@@ -205,6 +205,8 @@ export const buckleTools: CalculixTool[] = [
       } = parseOrdinarySolveArgs(args, {
         toolName: "calculix_solve_buckling",
         loads: "required",
+        additionalInputFields: ["n_modes"],
+        requireNonZeroReferenceLoad: true,
       });
       const nModes = (args.n_modes as number) ?? 2;
 

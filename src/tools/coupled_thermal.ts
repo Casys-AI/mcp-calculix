@@ -25,6 +25,7 @@
 import type { CalculixTool } from "./types.ts";
 import {
   parseOrdinarySolveArgs,
+  rejectUnknownFields,
   tightenCommonOrdinaryInputSchema,
 } from "./ordinary-preflight.ts";
 import { meshStep } from "../api/gmsh.ts";
@@ -251,6 +252,14 @@ export const coupledThermalTools: CalculixTool[] = [
           { selection: string; temperature_c: number }
         >
         : [];
+      for (const [index, thermalBC] of thermalBCsRaw.entries()) {
+        rejectUnknownFields(
+          thermalBC,
+          ["selection", "temperature_c"],
+          "calculix_solve_coupled_thermal",
+          `thermal_bcs[${index}]`,
+        );
+      }
       const {
         stepPath,
         expectedStepSha256,
@@ -264,6 +273,12 @@ export const coupledThermalTools: CalculixTool[] = [
       } = parseOrdinarySolveArgs(args, {
         toolName: "calculix_solve_coupled_thermal",
         loads: "optional",
+        additionalInputFields: [
+          "conductivity_w_mk",
+          "expansion_per_k",
+          "reference_temperature_c",
+          "thermal_bcs",
+        ],
         extraReferencedNames: thermalBCsRaw.map((bc) => bc.selection),
         extraReferenceRole: "fixed/thermal_bcs/loads",
       });

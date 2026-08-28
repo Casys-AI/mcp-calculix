@@ -6,10 +6,31 @@
 
 import type { FaceSelection } from "../api/gmsh.ts";
 
+export type OrdinaryInputErrorCode =
+  | "invalid_input"
+  | "unknown_input_field"
+  | "zero_reference_load";
+
+/**
+ * A pre-execution input failure. `code` and `inputPath` let an embedding
+ * client distinguish a typo from an invalid physical value without parsing
+ * the human-facing message.
+ */
 export class OrdinaryInputError extends Error {
-  constructor(message: string) {
+  readonly code: OrdinaryInputErrorCode;
+  readonly inputPath: string | undefined;
+
+  constructor(
+    message: string,
+    options: {
+      code?: OrdinaryInputErrorCode;
+      inputPath?: string;
+    } = {},
+  ) {
     super(message);
     this.name = "OrdinaryInputError";
+    this.code = options.code ?? "invalid_input";
+    this.inputPath = options.inputPath;
   }
 }
 
@@ -37,8 +58,12 @@ export interface OrdinaryPreflight {
 export interface OrdinaryPreflightOptions {
   toolName: string;
   loads: OrdinaryLoadsMode;
+  /** Analysis-specific documented root fields, in addition to common fields. */
+  additionalInputFields?: readonly string[];
   extraReferencedNames?: string[];
   extraReferenceRole?: string;
+  /** Buckling needs a non-zero reference preload to give its factors meaning. */
+  requireNonZeroReferenceLoad?: boolean;
 }
 
 /**
@@ -58,6 +83,7 @@ export interface MeshPreflightArgs {
 export function tightenCommonOrdinaryInputSchema(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
+  closeObjectSchemas(schema);
   const properties = schema.properties;
   if (!isRecord(properties)) return schema;
 
@@ -137,6 +163,24 @@ export function parseOrdinarySolveArgs(
 ): OrdinaryPreflight {
   const { toolName } = options;
 
+  rejectUnknownFields(
+    args,
+    [
+      "step_path",
+      "expected_step_sha256",
+      "mesh_size_mm",
+      "element_order",
+      "material",
+      "selections",
+      "fixed",
+      "timeout_ms",
+      ...(options.loads === "none" ? [] : ["loads"]),
+      ...(options.additionalInputFields ?? []),
+    ],
+    toolName,
+  );
+  rejectCommonNestedUnknownFields(args, toolName, options.loads);
+
   if (
     typeof args.step_path !== "string" || args.step_path.length < 1 ||
     args.step_path.includes("\0")
@@ -215,6 +259,17 @@ export function parseOrdinarySolveArgs(
   }
 
   const loads = parseLoads(toolName, args.loads, options.loads);
+  if (
+    options.requireNonZeroReferenceLoad &&
+    !loads.some((load) => load.force_n.some((component) => component !== 0))
+  ) {
+    throw fail(
+      toolName,
+      "reference loads must include at least one non-zero force_n component.",
+      "zero_reference_load",
+      "loads",
+    );
+  }
 
   const extraReferencedNames = options.extraReferencedNames ?? [];
   for (const name of extraReferencedNames) {
@@ -268,6 +323,83 @@ export function parseOrdinarySolveArgs(
     fixed,
     loads,
   };
+}
+
+/** Close every object schema, including nested selection and boundary objects. */
+export function closeObjectSchemas(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  for (const [key, child] of Object.entries(value)) {
+    if (Array.isArray(child)) {
+      value[key] = child.map((item) =>
+        isRecord(item) ? closeObjectSchemas(item) : item
+      );
+    } else if (isRecord(child)) {
+      value[key] = closeObjectSchemas(child);
+    }
+  }
+  if (value.type === "object" && value.additionalProperties === undefined) {
+    value.additionalProperties = false;
+  }
+  return value;
+}
+
+/**
+ * Reject a misspelled or unsupported field before snapshotting or spawning a
+ * native process. This mirrors `additionalProperties: false` for direct
+ * handler callers, which do not pass through MCP schema validation.
+ */
+export function rejectUnknownFields(
+  value: unknown,
+  allowed: readonly string[],
+  toolName: string,
+  path = "",
+): void {
+  if (!isRecord(value)) return;
+  const allowedFields = new Set(allowed);
+  const unknown = Object.keys(value).find((key) => !allowedFields.has(key));
+  if (unknown === undefined) return;
+  const inputPath = path === "" ? unknown : `${path}.${unknown}`;
+  throw fail(
+    toolName,
+    `unknown input field '${inputPath}'.`,
+    "unknown_input_field",
+    inputPath,
+  );
+}
+
+function rejectCommonNestedUnknownFields(
+  args: Record<string, unknown>,
+  toolName: string,
+  loads: OrdinaryLoadsMode,
+): void {
+  rejectUnknownFields(args.material, ["e_mpa", "nu"], toolName, "material");
+
+  if (Array.isArray(args.selections)) {
+    for (const [index, selection] of args.selections.entries()) {
+      const selectionPath = `selections[${index}]`;
+      rejectUnknownFields(selection, ["name", "box"], toolName, selectionPath);
+      if (isRecord(selection)) {
+        rejectUnknownFields(
+          selection.box,
+          ["min", "max"],
+          toolName,
+          `${selectionPath}.box`,
+        );
+      }
+    }
+  }
+
+  if (loads !== "none" && Array.isArray(args.loads)) {
+    for (const [index, load] of args.loads.entries()) {
+      rejectUnknownFields(
+        load,
+        ["selection", "force_n"],
+        toolName,
+        `loads[${index}]`,
+      );
+    }
+  }
 }
 
 /**
@@ -480,8 +612,16 @@ function finiteVector3(
   return [value[0], value[1], value[2]];
 }
 
-function fail(toolName: string, message: string): OrdinaryInputError {
-  return new OrdinaryInputError(`[${toolName}] ${message}`);
+function fail(
+  toolName: string,
+  message: string,
+  code: OrdinaryInputErrorCode = "invalid_input",
+  inputPath?: string,
+): OrdinaryInputError {
+  return new OrdinaryInputError(`[${toolName}] ${message}`, {
+    code,
+    inputPath,
+  });
 }
 
 function isFiniteNumber(value: unknown): value is number {

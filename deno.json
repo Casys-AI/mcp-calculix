@@ -1,6 +1,6 @@
 {
   "name": "@casys/mcp-calculix",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": ["jsr:@casys/mcp-server"]
@@ -14,6 +14,7 @@
     "fmt": "deno fmt --check deno.json mod.ts server.ts src/api src/client.ts src/results.ts src/tools src/ui/results-viewer/build.ts src/ui/results-viewer/src tests scripts",
     "release:check": "deno task fmt && deno task check && deno task lint && deno task test",
     "release:check:local": "deno task fmt && deno task check && deno task lint && deno task test:local",
+    "test:native": "CALCULIX_RUN_NATIVE=1 deno task test",
     "compile": "deno compile -A --output mcp-calculix server.ts",
     "test": "deno test --allow-all tests/ && deno test --config src/ui/results-viewer/deno.json --allow-all src/ui/results-viewer/src/model_test.ts",
     "test:local": "deno test --allow-all tests/ && deno test --config src/ui/results-viewer/deno.json --import-map src/ui/results-viewer/import-map.local.json --allow-all src/ui/results-viewer/src/model_test.ts"

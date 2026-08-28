@@ -191,6 +191,7 @@ export const modalTools: CalculixTool[] = [
       } = parseOrdinarySolveArgs(args, {
         toolName: "calculix_solve_modal",
         loads: "none",
+        additionalInputFields: ["density_kg_m3", "n_modes"],
       });
       const nModes = (args.n_modes as number) ?? 6;
       const densityKgM3 = args.density_kg_m3 as number;

@@ -246,6 +246,12 @@ export const creepTools: CalculixTool[] = [
       } = parseOrdinarySolveArgs(args, {
         toolName: "calculix_solve_creep",
         loads: "required",
+        additionalInputFields: [
+          "norton_a",
+          "norton_n",
+          "duration_s",
+          "initial_time_increment_s",
+        ],
       });
       const nortonA = args.norton_a as number;
       const nortonN = args.norton_n as number;

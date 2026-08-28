@@ -15,12 +15,14 @@ jobs:
           deno-version: v2.x
       - name: Require the release tag to match the package version
         run: test "${GITHUB_REF_NAME}" = "v$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
-      - name: Install native Gmsh release oracle
-        run: sudo apt-get update && sudo apt-get install -y gmsh
+      - name: Install native Gmsh and CalculiX release oracles
+        run: sudo apt-get update && sudo apt-get install -y gmsh calculix-ccx
       - name: Execute a native Gmsh mesh smoke test
         run: gmsh -3 tests/fixtures/bracket.step -format inp -o /tmp/mcp-calculix-release.inp && test -s /tmp/mcp-calculix-release.inp
       - name: Verify source release gates
         run: deno task release:check
+      - name: Execute native Gmsh and CalculiX release suite
+        run: deno task test:native
 
   build-push:
     needs: qualify
@@ -34,6 +36,15 @@ jobs:
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Build release image for native static smoke
+        run: docker build --load --tag mcp-calculix:release-smoke .
+
+      - name: Execute native static solve smoke inside release image
+        run: >-
+          docker run --rm --entrypoint sh mcp-calculix:release-smoke -c
+          'CALCULIX_RUN_NATIVE=1 deno test --cached-only --allow-all --filter
+          "physical observations" tests/solve_test.ts'
 
       - uses: docker/login-action@v3
         with:
