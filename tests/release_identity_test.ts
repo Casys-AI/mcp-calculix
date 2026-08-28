@@ -8,6 +8,13 @@ import {
 
 const PROTOCOL_VERSION = "2026-07-28";
 const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
+const CURRENT_RELEASE_VERSION = "0.8.1";
+const CURRENT_RELEASE_INDEX_DIGEST =
+  "c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4";
+const CURRENT_DEPLOYMENT_IMAGE =
+  `ghcr.io/casys-ai/mcp-calculix@sha256:${CURRENT_RELEASE_INDEX_DIGEST}`;
+const CURRENT_DISCOVERY_TAG =
+  `ghcr.io/casys-ai/mcp-calculix:${CURRENT_RELEASE_VERSION}`;
 const packageMetadata = JSON.parse(
   await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
 ) as { version?: unknown };
@@ -22,6 +29,11 @@ Deno.test(
   "release identities match deno.json across transports, provenance, and viewer",
   async () => {
     const expected = PACKAGE_VERSION;
+    assertEquals(
+      expected,
+      CURRENT_RELEASE_VERSION,
+      "Update the current release deployment digest when deno.json version changes.",
+    );
 
     assertReleaseVersion(
       "HTTP server",
@@ -113,8 +125,33 @@ Deno.test(
       "README must describe the package version declared in deno.json.",
     );
     assert(
-      readme.includes(`mcp-calculix:${expected}`),
-      "README Docker examples must use the package release tag.",
+      readme.includes(CURRENT_DEPLOYMENT_IMAGE),
+      "README must publish the current qualified deployment image digest.",
+    );
+    assert(
+      readme.includes(
+        `\`${CURRENT_DISCOVERY_TAG}\` is a mutable discovery tag, not a\n` +
+          "qualified deployment identity.",
+      ),
+      "README must describe the current release tag as mutable discovery only.",
+    );
+    assert(
+      readme.includes(`docker pull ${CURRENT_DEPLOYMENT_IMAGE}`),
+      "README Docker pull example must use the qualified index digest.",
+    );
+    assert(
+      readme.includes(`  ${CURRENT_DEPLOYMENT_IMAGE} http`),
+      "README HTTP Docker run example must use the qualified index digest.",
+    );
+    assert(
+      readme.includes(`        \"${CURRENT_DEPLOYMENT_IMAGE}\",`),
+      "README stdio Docker run example must use the qualified index digest.",
+    );
+    assert(
+      !readme.includes(`docker pull ${CURRENT_DISCOVERY_TAG}`) &&
+        !readme.includes(`  ${CURRENT_DISCOVERY_TAG} http`) &&
+        !readme.includes(`        \"${CURRENT_DISCOVERY_TAG}\",`),
+      "README deployment, pull, and run examples must not use the mutable release tag.",
     );
   },
 );

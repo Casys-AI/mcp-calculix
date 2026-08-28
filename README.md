@@ -28,21 +28,22 @@ observations, never a safety, compliance, or requirement verdict.
 
 ## Quick start
 
-The qualified multi-architecture release image is
-`ghcr.io/casys-ai/mcp-calculix:0.8.1`. It is available for `linux/amd64` and
-`linux/arm64`; its entrypoint is `./docker-entrypoint.sh` and its default
-command is `http`.
+The qualified multi-architecture deployment image is
+`ghcr.io/casys-ai/mcp-calculix@sha256:c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4`.
+It is available for `linux/amd64` and `linux/arm64`; its entrypoint is
+`./docker-entrypoint.sh` and its default command is `http`.
 
-`ghcr.io/casys-ai/mcp-calculix:latest` is a mutable convenience tag, not an
-immutable image identity. Resolve the `0.8.1` manifest to its published digest
-and use that digest for a deployed environment.
+`ghcr.io/casys-ai/mcp-calculix:0.8.1` is a mutable discovery tag, not a
+qualified deployment identity. `ghcr.io/casys-ai/mcp-calculix:latest` is also
+mutable. Use a tag only to discover a release, then deploy the published index
+digest above.
 
 Ephemeral STEP and mesh directories are removed on a best-effort basis after
 each call. A cleanup failure does not turn a completed preflight into durable
 evidence; operators should monitor and reclaim stale OS temporary directories.
 
 ```bash
-docker pull ghcr.io/casys-ai/mcp-calculix:0.8.1
+docker pull ghcr.io/casys-ai/mcp-calculix@sha256:c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4
 ```
 
 ### HTTP over Docker
@@ -55,7 +56,7 @@ docker run --rm --name mcp-calculix \
   -v /absolute/path/to/step-files:/inputs:ro \
   -v calculix-runs:/var/lib/mcp-calculix-runs \
   -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix:0.8.1 http
+  ghcr.io/casys-ai/mcp-calculix@sha256:c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4 http
 ```
 
 The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
@@ -108,7 +109,7 @@ stdin open with `-i`:
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "ghcr.io/casys-ai/mcp-calculix:0.8.1",
+        "ghcr.io/casys-ai/mcp-calculix@sha256:c38fe50eadcca77180c2bc060c073035af62924fa2b927d3f8005b6060be76d4",
         "stdio"
       ]
     }
