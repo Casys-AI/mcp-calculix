@@ -28,10 +28,10 @@ observations, never a safety, compliance, or requirement verdict.
 
 ## Quick start
 
-The tag-qualified multi-architecture release image is
-`ghcr.io/casys-ai/mcp-calculix:0.8.0`. It is available for `linux/amd64` and
-`linux/arm64`; its entrypoint is `./docker-entrypoint.sh` and its default
-command is `http`. Resolve and pin its OCI digest for a production deployment.
+The qualified multi-architecture release image is
+`ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395`.
+It is available for `linux/amd64` and `linux/arm64`; its entrypoint is
+`./docker-entrypoint.sh` and its default command is `http`.
 
 `ghcr.io/casys-ai/mcp-calculix:latest` is a mutable convenience tag, not an
 immutable image identity. Use the digest for a versioned deployment.
@@ -41,7 +41,7 @@ each call. A cleanup failure does not turn a completed preflight into durable
 evidence; operators should monitor and reclaim stale OS temporary directories.
 
 ```bash
-docker pull ghcr.io/casys-ai/mcp-calculix:0.8.0
+docker pull ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395
 ```
 
 ### HTTP over Docker
@@ -54,7 +54,7 @@ docker run --rm --name mcp-calculix \
   -v /absolute/path/to/step-files:/inputs:ro \
   -v calculix-runs:/var/lib/mcp-calculix-runs \
   -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix:0.8.0 http
+  ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395 http
 ```
 
 The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
@@ -107,7 +107,7 @@ stdin open with `-i`:
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "ghcr.io/casys-ai/mcp-calculix:0.8.0",
+        "ghcr.io/casys-ai/mcp-calculix@sha256:ba82f93cad4397a9d643009b5c98ace0b8d3aa75977aa20734b0475d9ffb4395",
         "stdio"
       ]
     }
