@@ -41,12 +41,34 @@ const SAMPLE_RESULT = {
   },
 };
 
+const SAMPLE_MESH_PREFLIGHT = {
+  schemaVersion: "1.0",
+  kind: "mesh-selection-preflight",
+  inputArtifact: {
+    sourcePath: "/tmp/bracket.step",
+    sha256: "b".repeat(64),
+    bytes: 1234,
+  },
+  boundsMm: { min: [-1, -2, -3], max: [4, 5, 6] },
+  mesh: { nodes: 4, elements: 1 },
+  selections: [{
+    name: "FIXED",
+    boxMm: { min: [-1, -2, -3], max: [4, 5, 6] },
+    nodes: 4,
+  }],
+  errors: [],
+};
+
 Deno.test("CalculiX serves stateless tool and results-viewer resource contracts", async () => {
   const { app, hasResultsViewer } = createCalculixServer({
     logger: () => {},
     solveHandler: () => ({
       content: "Static solve complete.",
       structuredContent: SAMPLE_RESULT,
+    }),
+    meshPreflightHandler: () => ({
+      content: "Mesh preflight complete.",
+      structuredContent: SAMPLE_MESH_PREFLIGHT,
     }),
   });
   assertEquals(hasResultsViewer, true);
@@ -63,11 +85,26 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.7.2",
+      version: "0.8.0",
     });
 
     const listed = await rpc(url, "tools/list");
     const tools = listed.body.result.tools as Array<Record<string, unknown>>;
+    const meshPreflight = tools.find((item) =>
+      item.name === "calculix_mesh_preflight"
+    );
+    assert(meshPreflight);
+    assertEquals(
+      (meshPreflight.inputSchema as Record<string, unknown>)
+        .additionalProperties,
+      false,
+    );
+    assertEquals(
+      (meshPreflight.outputSchema as Record<string, unknown>)
+        .additionalProperties,
+      false,
+    );
+    assertEquals(meshPreflight._meta, undefined);
     const tool = tools.find((item) => item.name === "calculix_solve_static");
     assert(tool);
     assertEquals(
@@ -111,6 +148,23 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     });
     assertEquals(called.body.result.resultType, "complete");
     assertEquals(called.body.result.structuredContent, SAMPLE_RESULT);
+
+    const preflightCalled = await rpc(url, "tools/call", {
+      name: "calculix_mesh_preflight",
+      arguments: {
+        step_path: "/tmp/bracket.step",
+        mesh_size_mm: 4,
+        selections: [{
+          name: "FIXED",
+          box: { min: [-1, -2, -3], max: [4, 5, 6] },
+        }],
+      },
+    });
+    assertEquals(preflightCalled.body.result.resultType, "complete");
+    assertEquals(
+      preflightCalled.body.result.structuredContent,
+      SAMPLE_MESH_PREFLIGHT,
+    );
 
     const resource = await rpc(url, "resources/read", {
       uri: "ui://mcp-calculix/results-viewer",

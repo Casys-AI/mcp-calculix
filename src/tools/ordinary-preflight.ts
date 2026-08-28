@@ -17,6 +17,8 @@ export const SELECTION_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,60}$/;
 export const SHA256_HEX_PATTERN = /^[a-fA-F0-9]{64}$/;
 export const DEFAULT_ELEMENT_ORDER = 2 as const;
 export const DEFAULT_TIMEOUT_MS = 120_000;
+export const MAX_MESH_PREFLIGHT_SELECTIONS = 32;
+export const MAX_MESH_PREFLIGHT_TIMEOUT_MS = 120_000;
 
 export type OrdinaryLoadsMode = "required" | "optional" | "none";
 
@@ -37,6 +39,19 @@ export interface OrdinaryPreflightOptions {
   loads: OrdinaryLoadsMode;
   extraReferencedNames?: string[];
   extraReferenceRole?: string;
+}
+
+/**
+ * Mesh-only inputs intentionally exclude material, constraints, loads, and
+ * any solver control. The resulting preflight is not an FEA result.
+ */
+export interface MeshPreflightArgs {
+  stepPath: string;
+  expectedStepSha256: string | undefined;
+  meshSizeMm: number;
+  elementOrder: 1 | 2;
+  timeoutMs: number;
+  selections: FaceSelection[];
 }
 
 /** Tighten common JSON Schema bounds shared by the ordinary solve tools. */
@@ -182,48 +197,8 @@ export function parseOrdinarySolveArgs(
     );
   }
 
-  if (!Array.isArray(args.selections) || args.selections.length < 1) {
-    throw fail(toolName, "selections must be a non-empty array.");
-  }
-  const known = new Set<string>();
-  const selections: FaceSelection[] = [];
-  for (const [index, value] of args.selections.entries()) {
-    if (!isRecord(value)) {
-      throw fail(toolName, `selection ${index} is invalid.`);
-    }
-    if (
-      typeof value.name !== "string" ||
-      !SELECTION_NAME_PATTERN.test(value.name) ||
-      known.has(value.name)
-    ) {
-      throw fail(
-        toolName,
-        `selection ${index} has an invalid or duplicate name.`,
-      );
-    }
-    known.add(value.name);
-    if (!isRecord(value.box)) {
-      throw fail(
-        toolName,
-        `selection '${value.name}' box must have finite min and max.`,
-      );
-    }
-    const min = finiteVector3(value.box.min);
-    const max = finiteVector3(value.box.max);
-    if (
-      min === undefined || max === undefined ||
-      min.some((lo, axis) => lo >= max[axis])
-    ) {
-      throw fail(
-        toolName,
-        `selection '${value.name}': box min must be strictly below max ` +
-          `on every axis (got min=${JSON.stringify(value.box.min)}, max=${
-            JSON.stringify(value.box.max)
-          }).`,
-      );
-    }
-    selections.push({ name: value.name, box: { min, max } });
-  }
+  const selections = parseSelections(args.selections, toolName);
+  const known = new Set(selections.map((selection) => selection.name));
 
   if (!Array.isArray(args.fixed) || args.fixed.length < 1) {
     throw fail(toolName, "fixed must be a non-empty array.");
@@ -295,6 +270,87 @@ export function parseOrdinarySolveArgs(
   };
 }
 
+/**
+ * Parse a bounded mesh/selection inspection request before snapshotting or
+ * starting Gmsh. This deliberately rejects solver-only fields rather than
+ * accepting a static-solve payload and silently ignoring its physics.
+ */
+export function parseMeshPreflightArgs(
+  args: Record<string, unknown>,
+  toolName = "calculix_mesh_preflight",
+): MeshPreflightArgs {
+  const allowed = new Set([
+    "step_path",
+    "expected_step_sha256",
+    "mesh_size_mm",
+    "element_order",
+    "timeout_ms",
+    "selections",
+  ]);
+  const unknown = Object.keys(args).find((key) => !allowed.has(key));
+  if (unknown) {
+    throw fail(toolName, `unknown input field '${unknown}'.`);
+  }
+
+  if (
+    typeof args.step_path !== "string" || args.step_path.length < 1 ||
+    args.step_path.includes("\0")
+  ) {
+    throw fail(toolName, "step_path must be a non-empty string.");
+  }
+
+  let expectedStepSha256: string | undefined;
+  if (args.expected_step_sha256 !== undefined) {
+    if (
+      typeof args.expected_step_sha256 !== "string" ||
+      !SHA256_HEX_PATTERN.test(args.expected_step_sha256)
+    ) {
+      throw fail(
+        toolName,
+        "expected_step_sha256 must be a 64-character hexadecimal SHA-256 digest.",
+      );
+    }
+    expectedStepSha256 = args.expected_step_sha256;
+  }
+
+  if (!isFiniteNumber(args.mesh_size_mm) || args.mesh_size_mm <= 0) {
+    throw fail(
+      toolName,
+      `mesh_size_mm must be a positive finite number, got ${args.mesh_size_mm}.`,
+    );
+  }
+
+  const elementOrder = args.element_order ?? DEFAULT_ELEMENT_ORDER;
+  if (elementOrder !== 1 && elementOrder !== 2) {
+    throw fail(toolName, `element_order must be 1 or 2, got ${elementOrder}.`);
+  }
+
+  const timeoutMs = args.timeout_ms ?? DEFAULT_TIMEOUT_MS;
+  if (
+    !Number.isSafeInteger(timeoutMs) || (timeoutMs as number) < 1 ||
+    (timeoutMs as number) > MAX_MESH_PREFLIGHT_TIMEOUT_MS
+  ) {
+    throw fail(
+      toolName,
+      `timeout_ms must be a positive integer no greater than ${MAX_MESH_PREFLIGHT_TIMEOUT_MS}, got ${timeoutMs}.`,
+    );
+  }
+
+  const selections = parseSelections(
+    args.selections,
+    toolName,
+    MAX_MESH_PREFLIGHT_SELECTIONS,
+  );
+  return {
+    stepPath: args.step_path,
+    expectedStepSha256,
+    meshSizeMm: args.mesh_size_mm,
+    elementOrder,
+    timeoutMs: timeoutMs as number,
+    selections,
+  };
+}
+
 function parseLoads(
   toolName: string,
   raw: unknown,
@@ -331,6 +387,72 @@ function parseLoads(
     loads.push({ selection: value.selection, force_n: force });
   }
   return loads;
+}
+
+function parseSelections(
+  value: unknown,
+  toolName: string,
+  maximum?: number,
+): FaceSelection[] {
+  if (!Array.isArray(value) || value.length < 1) {
+    throw fail(toolName, "selections must be a non-empty array.");
+  }
+  if (maximum !== undefined && value.length > maximum) {
+    throw fail(
+      toolName,
+      `selections must contain no more than ${maximum} items.`,
+    );
+  }
+
+  const known = new Set<string>();
+  const selections: FaceSelection[] = [];
+  const selectionNames = new Set<string>();
+  for (const [index, selection] of value.entries()) {
+    if (!isRecord(selection)) {
+      throw fail(toolName, `selection ${index} is invalid.`);
+    }
+    if (
+      typeof selection.name !== "string" ||
+      !SELECTION_NAME_PATTERN.test(selection.name) ||
+      known.has(selection.name)
+    ) {
+      throw fail(
+        toolName,
+        `selection ${index} has an invalid or duplicate name.`,
+      );
+    }
+    known.add(selection.name);
+    if (!isRecord(selection.box)) {
+      throw fail(
+        toolName,
+        `selection '${selection.name}' box must have finite min and max.`,
+      );
+    }
+    const min = finiteVector3(selection.box.min);
+    const max = finiteVector3(selection.box.max);
+    if (
+      min === undefined || max === undefined ||
+      min.some((lo, axis) => lo >= max[axis])
+    ) {
+      throw fail(
+        toolName,
+        `selection '${selection.name}': box min must be strictly below max ` +
+          `on every axis (got min=${JSON.stringify(selection.box.min)}, max=${
+            JSON.stringify(selection.box.max)
+          }).`,
+      );
+    }
+    const canonicalName = selection.name.toUpperCase();
+    if (selectionNames.has(canonicalName)) {
+      throw fail(
+        toolName,
+        "selection names must be unique case-insensitively.",
+      );
+    }
+    selectionNames.add(canonicalName);
+    selections.push({ name: selection.name, box: { min, max } });
+  }
+  return selections;
 }
 
 function tightenSelectionField(value: unknown): void {

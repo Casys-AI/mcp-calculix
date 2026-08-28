@@ -78,6 +78,35 @@ export interface RecordedMeshResult {
   artifacts: MeshRecordedArtifacts;
 }
 
+/** Coordinate extent of the nodes written in a cleaned Abaqus mesh, in mm. */
+export interface MeshBounds {
+  min: [number, number, number];
+  max: [number, number, number];
+}
+
+/** A valid named selection which did not receive any mesh nodes. */
+export interface MeshSelectionError {
+  selection: string;
+  code: "empty_selection";
+  message: string;
+}
+
+/**
+ * Ephemeral mesh-only diagnostic. It deliberately contains no CalculiX deck,
+ * solver output, or durable resource reference.
+ */
+export interface MeshPreflightResult {
+  mesh: MeshResult;
+  /** Bounds of emitted mesh nodes, not a CAD topology or solid-body claim. */
+  bounds: MeshBounds;
+  selectionErrors: MeshSelectionError[];
+}
+
+interface MeshWithSelectionDiagnostics {
+  recorded: RecordedMeshResult;
+  selectionErrors: MeshSelectionError[];
+}
+
 /** NSET names are written into the deck — keep them strictly boring. */
 export function validateSetName(name: string): void {
   if (!/^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(name)) {
@@ -152,47 +181,122 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
   let nodeCount = 0;
   let elementCount = 0;
   let maxNodeId = 0;
-  const nodesPerSet: Record<string, number> = {};
+  const nodeIds = new Set<number>();
+  const nsetNames = new Map<string, string>();
 
   let section: "node" | "element" | "nset" | null = null;
   let currentSet = "";
+  let elementContinues = false;
 
-  for (const line of inpText.split("\n")) {
-    if (line.startsWith("*NODE")) {
+  for (const rawLine of inpText.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("**")) continue;
+    if (/^\*NODE\b/i.test(line)) {
       section = "node";
+      elementContinues = false;
       continue;
     }
-    if (line.startsWith("*ELEMENT")) {
+    if (/^\*ELEMENT\b/i.test(line)) {
       section = "element";
+      elementContinues = false;
       continue;
     }
-    if (line.startsWith("*NSET")) {
+    if (/^\*NSET\b/i.test(line)) {
       section = "nset";
-      currentSet = line.match(/NSET=(\w+)/)?.[1] ?? "";
-      nodesPerSet[currentSet] = nodesPerSet[currentSet] ?? 0;
+      currentSet = line.match(/NSET\s*=\s*([A-Za-z][A-Za-z0-9_]*)/i)?.[1] ?? "";
+      if (currentSet) nsetNames.set(currentSet.toUpperCase(), currentSet);
+      elementContinues = false;
       continue;
     }
     if (line.startsWith("*")) {
       section = null;
+      elementContinues = false;
       continue;
     }
-    if (!line.trim()) continue;
-
     if (section === "node") {
-      nodeCount++;
       const id = parseInt(line.split(",")[0], 10);
+      if (!Number.isSafeInteger(id) || id < 1) {
+        throw new MeshingError("Cleaned mesh contains an invalid *NODE id.");
+      }
+      if (nodeIds.has(id)) {
+        throw new MeshingError(
+          `Cleaned mesh contains duplicate *NODE id ${id}.`,
+        );
+      }
+      nodeIds.add(id);
+      nodeCount++;
       if (id > maxNodeId) maxNodeId = id;
     } else if (section === "element") {
       // Continuation lines of a C3D10 element start with node ids only; count
       // lines that begin a new element (first field is the element id and the
       // previous line did not end with a comma).
-      elementCount++;
-    } else if (section === "nset" && currentSet) {
-      nodesPerSet[currentSet] += line.split(",").filter((t) => t.trim()).length;
+      if (!elementContinues) elementCount++;
+      elementContinues = line.endsWith(",");
     }
   }
-
+  const parsedSets = parseNsetNodeIds(inpText);
+  const nodesPerSet = Object.fromEntries(
+    [...nsetNames].map((
+      [canonical, presented],
+    ) => [presented, parsedSets[canonical]?.size ?? 0]),
+  );
   return { nodeCount, elementCount, maxNodeId, nodesPerSet };
+}
+
+/**
+ * Read the coordinate extent from the exact cleaned mesh text. This is kept
+ * separate from `inspectInp` so ordinary solve callers retain their existing
+ * result contract.
+ */
+export function inspectMeshNodeBounds(inpText: string): MeshBounds {
+  let inNodeSection = false;
+  let nodeCount = 0;
+  const nodeIds = new Set<number>();
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+
+  for (const rawLine of inpText.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("**")) continue;
+    if (line.startsWith("*")) {
+      inNodeSection = /^\*NODE\b/i.test(line);
+      continue;
+    }
+    if (!inNodeSection) continue;
+
+    const fields = line.split(",").map((field) => field.trim());
+    if (fields.length !== 4 || fields.some((field) => field.length === 0)) {
+      throw new MeshingError(
+        "Cleaned mesh contains a malformed *NODE record while reading bounds.",
+      );
+    }
+    const nodeId = Number(fields[0]);
+    const coordinates = fields.slice(1).map(Number);
+    if (
+      !Number.isSafeInteger(nodeId) || nodeId < 1 ||
+      coordinates.length !== 3 || !coordinates.every(Number.isFinite)
+    ) {
+      throw new MeshingError(
+        "Cleaned mesh contains a non-finite or invalid *NODE record while reading bounds.",
+      );
+    }
+    if (nodeIds.has(nodeId)) {
+      throw new MeshingError(
+        `Cleaned mesh contains duplicate *NODE id ${nodeId}.`,
+      );
+    }
+    nodeIds.add(nodeId);
+    for (const axis of [0, 1, 2] as const) {
+      min[axis] = Math.min(min[axis], coordinates[axis]);
+      max[axis] = Math.max(max[axis], coordinates[axis]);
+    }
+    nodeCount++;
+  }
+
+  if (nodeCount === 0) {
+    throw new MeshingError("Cleaned mesh contains no *NODE records.");
+  }
+  return { min, max };
 }
 
 /**
@@ -300,6 +404,30 @@ export async function meshStep(options: MeshOptions): Promise<MeshResult> {
 export async function meshStepRecorded(
   options: MeshOptions,
 ): Promise<RecordedMeshResult> {
+  const result = await meshStepWithSelectionDiagnostics(options);
+  const selectionError = result.selectionErrors[0];
+  if (selectionError) throw new MeshingError(selectionError.message);
+  return result.recorded;
+}
+
+/**
+ * Mesh a STEP snapshot without invoking CalculiX. Empty named selections are
+ * returned as diagnostics so callers can correct boxes before a solve.
+ */
+export async function meshStepPreflight(
+  options: MeshOptions,
+): Promise<MeshPreflightResult> {
+  const result = await meshStepWithSelectionDiagnostics(options);
+  return {
+    mesh: result.recorded.mesh,
+    bounds: inspectMeshNodeBounds(result.recorded.mesh.inpText),
+    selectionErrors: result.selectionErrors,
+  };
+}
+
+async function meshStepWithSelectionDiagnostics(
+  options: MeshOptions,
+): Promise<MeshWithSelectionDiagnostics> {
   // Preserve the legacy public path contract even though the recorded flow
   // subsequently copies it into a stable private relative input.
   if (/["\\\r\n]/.test(options.stepPath)) {
@@ -385,26 +513,31 @@ export async function meshStepRecorded(
     const inpText = cleanInp(raw);
     const inspection = inspectInp(inpText);
 
-    for (const selection of options.selections) {
+    const selectionErrors = options.selections.flatMap((selection) => {
       const count = inspection.nodesPerSet[selection.name] ?? 0;
-      if (count === 0) {
-        throw new MeshingError(
+      if (count > 0) return [];
+      return [{
+        selection: selection.name,
+        code: "empty_selection" as const,
+        message:
           `Selection '${selection.name}' matched no surface — its NSET is ` +
-            `empty. Check the box against the part's bounding box ` +
-            `(build123d_execute reports it), and remember coordinates are in mm.`,
-        );
-      }
-    }
+          "empty. Check the box against the mesh coordinate bounds and " +
+          "remember coordinates are in mm.",
+      }];
+    });
 
     return {
-      mesh: { inpText, ...inspection },
-      artifacts: {
-        geoText,
-        inputStepSha256,
-        inputStepBytes: copiedInputStep.length,
-        diagnostics,
-        cleanedInpText: inpText,
+      recorded: {
+        mesh: { inpText, ...inspection },
+        artifacts: {
+          geoText,
+          inputStepSha256,
+          inputStepBytes: copiedInputStep.length,
+          diagnostics,
+          cleanedInpText: inpText,
+        },
       },
+      selectionErrors,
     };
   } finally {
     await Deno.remove(workDir, { recursive: true }).catch(() => {});

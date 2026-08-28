@@ -650,7 +650,7 @@ async function resolveExecutionIdentity(): Promise<
   ]);
   return {
     schema_version: "1.0",
-    server: { package: "@casys/mcp-calculix", version: "0.7.2" },
+    server: { package: "@casys/mcp-calculix", version: "0.8.0" },
     method: { id: "calculix_solve_static_recorded", version: "1.0" },
     lowering: { id: "calculix.static.abaqus-deck", version: "1.0" },
     engines: {

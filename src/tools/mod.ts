@@ -16,11 +16,19 @@ export { modalTools } from "./modal.ts";
 export { buckleTools } from "./buckling.ts";
 export { creepTools } from "./creep.ts";
 export { coupledThermalTools } from "./coupled_thermal.ts";
+export {
+  createMeshPreflightTools,
+  MESH_PREFLIGHT_INPUT_SCHEMA,
+  MESH_PREFLIGHT_TOOL_NAME,
+  meshPreflightTools,
+} from "./mesh-preflight.ts";
+export type { MeshPreflightToolDependencies } from "./mesh-preflight.ts";
 
 import { buckleTools } from "./buckling.ts";
 import { coupledThermalTools } from "./coupled_thermal.ts";
 import { creepTools } from "./creep.ts";
 import { modalTools } from "./modal.ts";
+import { meshPreflightTools } from "./mesh-preflight.ts";
 import { solveTools } from "./solve.ts";
 import { createRecordedStaticTools } from "./solve.ts";
 import type { CalculixTool } from "./types.ts";
@@ -28,6 +36,7 @@ import type { CalculixRunStore } from "../runs.ts";
 
 /** All CalculiX tools combined */
 export const allTools: CalculixTool[] = [
+  ...meshPreflightTools,
   ...solveTools,
   ...modalTools,
   ...buckleTools,
@@ -45,6 +54,7 @@ export function createAllTools(runStore?: CalculixRunStore): CalculixTool[] {
 /** Tools organized by category */
 export const toolsByCategory: Record<string, CalculixTool[]> = {
   solve: [
+    ...meshPreflightTools,
     ...solveTools,
     ...modalTools,
     ...buckleTools,

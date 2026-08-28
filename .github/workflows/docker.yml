@@ -2,14 +2,28 @@ name: Docker
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  workflow_dispatch:
 
 jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Require the release tag to match the package version
+        run: test "${GITHUB_REF_NAME}" = "v$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+      - name: Install native Gmsh release oracle
+        run: sudo apt-get update && sudo apt-get install -y gmsh
+      - name: Execute a native Gmsh mesh smoke test
+        run: gmsh -3 tests/fixtures/bracket.step -format inp -o /tmp/mcp-calculix-release.inp && test -s /tmp/mcp-calculix-release.inp
+      - name: Verify source release gates
+        run: deno task release:check
+
   build-push:
+    needs: qualify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,7 +46,7 @@ jobs:
         with:
           images: ghcr.io/casys-ai/mcp-calculix
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
             type=semver,pattern={{version}}
 
       - uses: docker/build-push-action@v6

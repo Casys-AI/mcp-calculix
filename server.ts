@@ -10,13 +10,15 @@ import { CalculixToolsClient } from "./src/client.ts";
 import { CalculixRunStore, type RecordedStaticRun } from "./src/runs.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
-const VERSION = "0.7.2";
+const VERSION = "0.8.0";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 
 export interface CreateCalculixServerOptions {
   /** Test seam for exercising the MCP wire without native solver binaries. */
   solveHandler?: CalculixToolHandler;
+  /** Test seam for exercising mesh preflight MCP wiring without Gmsh. */
+  meshPreflightHandler?: CalculixToolHandler;
   logger?: (message: string) => void;
   viewerFileSystem?: CalculixResultsViewerFileSystem;
   viewerModuleUrl?: string;
@@ -51,6 +53,9 @@ export function createCalculixServer(
   if (options.solveHandler) {
     handlers.set("calculix_solve_static", options.solveHandler);
   }
+  if (options.meshPreflightHandler) {
+    handlers.set("calculix_mesh_preflight", options.meshPreflightHandler);
+  }
 
   const logger = options.logger ??
     ((message: string) => console.error(`[mcp-calculix] ${message}`));
@@ -65,11 +70,12 @@ export function createCalculixServer(
     // immediately after a successful solve, including after either transport starts.
     expectResources: true,
     instructions:
-      "Bounded finite-element analysis of STEP parts: linear static, modal, " +
+      "Bounded STEP analysis: mesh/selection preflight, linear static, modal, " +
       "linear buckling, Norton-law creep, and steady-state coupled " +
-      "temperature-displacement. Results report mesh and physical " +
-      "observations only; durable exact evidence is available for recorded " +
-      "static solves, and no requirement verdict is produced.",
+      "temperature-displacement. Mesh preflight stops before CalculiX and " +
+      "reports mesh diagnostics only. Solve results report mesh and physical " +
+      "observations; durable exact evidence is available for recorded static " +
+      "solves, and no requirement verdict is produced.",
     logger,
   });
   app.registerTools(toolsClient.toMCPFormat(), handlers);

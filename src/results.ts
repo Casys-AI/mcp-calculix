@@ -6,6 +6,136 @@
  * rejects both missing and extra fields.
  */
 
+export const MESH_PREFLIGHT_SCHEMA_VERSION = "1.0";
+export const MESH_PREFLIGHT_KIND = "mesh-selection-preflight";
+
+/**
+ * Mesh-only diagnostic: it contains no material, boundary condition, deck,
+ * CalculiX result, requirement verdict, or durable artifact reference.
+ */
+export interface MeshPreflightResult {
+  schemaVersion: typeof MESH_PREFLIGHT_SCHEMA_VERSION;
+  kind: typeof MESH_PREFLIGHT_KIND;
+  inputArtifact: {
+    sourcePath: string;
+    sha256: string;
+    bytes: number;
+  };
+  /** Bounds of generated mesh nodes in the STEP coordinate system, in mm. */
+  boundsMm: {
+    min: readonly [number, number, number];
+    max: readonly [number, number, number];
+  };
+  mesh: {
+    nodes: number;
+    elements: number;
+  };
+  selections: readonly {
+    name: string;
+    boxMm: {
+      min: readonly [number, number, number];
+      max: readonly [number, number, number];
+    };
+    nodes: number;
+  }[];
+  errors: readonly {
+    selection: string;
+    code: "empty_selection";
+    message: string;
+  }[];
+}
+
+const VECTOR3_SCHEMA = {
+  type: "array",
+  items: { type: "number" },
+  minItems: 3,
+  maxItems: 3,
+} as const;
+
+/** Closed MCP output contract for the ephemeral mesh/selection preflight. */
+export const MESH_PREFLIGHT_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "schemaVersion",
+    "kind",
+    "inputArtifact",
+    "boundsMm",
+    "mesh",
+    "selections",
+    "errors",
+  ],
+  properties: {
+    schemaVersion: { const: MESH_PREFLIGHT_SCHEMA_VERSION },
+    kind: { const: MESH_PREFLIGHT_KIND },
+    inputArtifact: {
+      type: "object",
+      additionalProperties: false,
+      required: ["sourcePath", "sha256", "bytes"],
+      properties: {
+        sourcePath: { type: "string", minLength: 1 },
+        sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        bytes: { type: "integer", minimum: 1 },
+      },
+    },
+    boundsMm: {
+      type: "object",
+      additionalProperties: false,
+      required: ["min", "max"],
+      properties: { min: VECTOR3_SCHEMA, max: VECTOR3_SCHEMA },
+    },
+    mesh: {
+      type: "object",
+      additionalProperties: false,
+      required: ["nodes", "elements"],
+      properties: {
+        nodes: { type: "integer", minimum: 1 },
+        elements: { type: "integer", minimum: 0 },
+      },
+    },
+    selections: {
+      type: "array",
+      minItems: 1,
+      maxItems: 32,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "boxMm", "nodes"],
+        properties: {
+          name: {
+            type: "string",
+            pattern: "^[A-Za-z][A-Za-z0-9_]{0,60}$",
+          },
+          boxMm: {
+            type: "object",
+            additionalProperties: false,
+            required: ["min", "max"],
+            properties: { min: VECTOR3_SCHEMA, max: VECTOR3_SCHEMA },
+          },
+          nodes: { type: "integer", minimum: 0 },
+        },
+      },
+    },
+    errors: {
+      type: "array",
+      maxItems: 32,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["selection", "code", "message"],
+        properties: {
+          selection: {
+            type: "string",
+            pattern: "^[A-Za-z][A-Za-z0-9_]{0,60}$",
+          },
+          code: { const: "empty_selection" },
+          message: { type: "string", minLength: 1 },
+        },
+      },
+    },
+  },
+} as const;
+
 export const STATIC_SOLVE_SCHEMA_VERSION = "2.0";
 export const STATIC_SOLVE_KIND = "static-solve";
 export const STATIC_SOLVE_RECORDED_SCHEMA_VERSION = "2.0";

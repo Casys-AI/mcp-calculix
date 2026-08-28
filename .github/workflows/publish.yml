@@ -2,8 +2,8 @@ name: Publish
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
   check:
@@ -14,6 +14,15 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+
+      - name: Require the release tag to match the package version
+        run: test "${GITHUB_REF_NAME}" = "v$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.json")).version)')"
+
+      - name: Install native Gmsh release oracle
+        run: sudo apt-get update && sudo apt-get install -y gmsh
+
+      - name: Execute a native Gmsh mesh smoke test
+        run: gmsh -3 tests/fixtures/bracket.step -format inp -o /tmp/mcp-calculix-release.inp && test -s /tmp/mcp-calculix-release.inp
 
       - name: Verify release gates
         run: deno task release:check

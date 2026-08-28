@@ -28,8 +28,12 @@ export type {
 export {
   buckleTools,
   coupledThermalTools,
+  createMeshPreflightTools,
   createRecordedStaticTools,
   creepTools,
+  MESH_PREFLIGHT_INPUT_SCHEMA,
+  MESH_PREFLIGHT_TOOL_NAME,
+  meshPreflightTools,
   modalTools,
   solveTools,
 } from "./src/tools/mod.ts";
@@ -43,6 +47,9 @@ export {
   CREEP_SOLVE_KIND,
   CREEP_SOLVE_OUTPUT_SCHEMA,
   CREEP_SOLVE_SCHEMA_VERSION,
+  MESH_PREFLIGHT_KIND,
+  MESH_PREFLIGHT_OUTPUT_SCHEMA,
+  MESH_PREFLIGHT_SCHEMA_VERSION,
   MODAL_SOLVE_KIND,
   MODAL_SOLVE_OUTPUT_SCHEMA,
   MODAL_SOLVE_SCHEMA_VERSION,
@@ -60,6 +67,7 @@ export type {
   BuckleSolveResult,
   CoupledThermalSolveResult,
   CreepSolveResult,
+  MeshPreflightResult,
   ModalSolveResult,
   StaticSolveResult,
 } from "./src/results.ts";
@@ -69,16 +77,21 @@ export {
   cleanInp,
   GmshNotFoundError,
   inspectInp,
+  inspectMeshNodeBounds,
   MeshingError,
   meshStep,
+  meshStepPreflight,
   meshStepRecorded,
   parseNsetNodeIds,
 } from "./src/api/gmsh.ts";
 export type {
   FaceSelection,
+  MeshBounds,
   MeshOptions,
+  MeshPreflightResult as GmshMeshPreflightResult,
   MeshRecordedArtifacts,
   MeshResult,
+  MeshSelectionError,
   RecordedMeshResult,
 } from "./src/api/gmsh.ts";
 export {

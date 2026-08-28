@@ -2124,7 +2124,16 @@ function assertRecordedRunCausality(args: {
       "Recorded mesh.geo is not the deterministic stable lowering of the resolved request.",
     );
   }
-  const inspection = inspectInp(args.meshInp);
+  let inspection: ReturnType<typeof inspectInp>;
+  try {
+    inspection = inspectInp(args.meshInp);
+  } catch (error) {
+    throw new CalculixRunIntegrityError(
+      `Recorded mesh counts cannot be reproduced from mesh.inp: ${
+        message(error)
+      }`,
+    );
+  }
   const mesh = record(args.result.mesh, "recorded result mesh");
   const resultCounts = record(mesh.nodesPerSelection, "mesh.nodesPerSelection");
   if (

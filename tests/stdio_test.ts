@@ -162,6 +162,12 @@ Deno.test(
       await send({
         jsonrpc: "2.0",
         id: 2,
+        method: "tools/list",
+        params: {},
+      });
+      await send({
+        jsonrpc: "2.0",
+        id: 3,
         method: "tools/call",
         params: {
           name: "calculix_run_get",
@@ -170,19 +176,19 @@ Deno.test(
       });
       await send({
         jsonrpc: "2.0",
-        id: 3,
+        id: 4,
         method: "resources/list",
         params: {},
       });
       await send({
         jsonrpc: "2.0",
-        id: 4,
+        id: 5,
         method: "resources/read",
         params: { uri: VIEWER_URI },
       });
 
-      const responses = await collectResponses(server.stdout, 4, 30_000);
-      assertEquals(responses.length, 4, "expected four native stdio responses");
+      const responses = await collectResponses(server.stdout, 5, 30_000);
+      assertEquals(responses.length, 5, "expected five native stdio responses");
 
       const initialized = responseById(responses, 1);
       assertEquals(initialized.protocolVersion, "2025-06-18");
@@ -191,20 +197,28 @@ Deno.test(
         "mcp-calculix",
       );
 
-      const runGet = responseById(responses, 2);
+      const tools = responseById(responses, 2).tools as Array<
+        Record<string, unknown>
+      >;
+      assert(
+        tools.some((tool) => tool.name === "calculix_mesh_preflight"),
+        "the native server must register the mesh-only preflight",
+      );
+
+      const runGet = responseById(responses, 3);
       assertEquals(
         (runGet.structuredContent as Record<string, unknown>).status,
         "not_found",
       );
       assertEquals(runGet.isError, undefined);
 
-      const listed = responseById(responses, 3);
+      const listed = responseById(responses, 4);
       const viewer = (listed.resources as Array<Record<string, unknown>>).find(
         (resource) => resource.uri === VIEWER_URI,
       );
       assert(viewer, "the native resource lifecycle must list the viewer");
 
-      const read = responseById(responses, 4);
+      const read = responseById(responses, 5);
       const content = (read.contents as Array<Record<string, unknown>>)[0];
       assertEquals(content.uri, VIEWER_URI);
       assertEquals(

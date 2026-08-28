@@ -1,4 +1,4 @@
-/** Stable, content-attested STEP input snapshots for one CalculiX solve. */
+/** Stable, content-attested STEP input snapshots for one CalculiX operation. */
 
 export interface InputArtifact {
   /** Private snapshot path actually passed to Gmsh. Ephemeral after the call. */
@@ -34,7 +34,8 @@ function sha256Hex(bytes: Uint8Array): Promise<string> {
 
 /**
  * Copy a caller-controlled STEP path into a private per-call directory, then
- * attest and freeze that copy before any meshing subprocess starts.
+ * attest and freeze that copy before any meshing subprocess starts. `operation`
+ * only scopes diagnostic text; it never changes the snapshot contract.
  *
  * Hashing after the copy is deliberate: it proves the exact bytes Gmsh will
  * consume, even if the source path is concurrently replaced.  An expected
@@ -43,18 +44,21 @@ function sha256Hex(bytes: Uint8Array): Promise<string> {
 export async function snapshotStepArtifact(
   sourcePath: string,
   expectedSha256?: string,
+  operation = "calculix_solve_static",
 ): Promise<StepSnapshot> {
   if (
     expectedSha256 !== undefined &&
     !/^[a-fA-F0-9]{64}$/.test(expectedSha256)
   ) {
     throw new InputArtifactError(
-      "[calculix_solve_static] expected_step_sha256 must be a 64-character hexadecimal SHA-256 digest.",
+      `[${operation}] expected_step_sha256 must be a 64-character hexadecimal SHA-256 digest.`,
     );
   }
 
   const workDir = await Deno.makeTempDir({ prefix: "calculix-input-" });
   const snapshotPath = `${workDir}/input.step`;
+  // Cleanup is best-effort: callers must not treat the ephemeral path as a
+  // durable handle even if the host refuses its removal.
   const cleanup = () =>
     Deno.remove(workDir, { recursive: true }).catch(() => {});
 
@@ -63,7 +67,7 @@ export async function snapshotStepArtifact(
     const bytes = await Deno.readFile(snapshotPath);
     if (bytes.length === 0) {
       throw new InputArtifactError(
-        `[calculix_solve_static] STEP input is empty: ${sourcePath}`,
+        `[${operation}] STEP input is empty: ${sourcePath}`,
       );
     }
     const sha256 = await sha256Hex(bytes);
@@ -72,7 +76,7 @@ export async function snapshotStepArtifact(
       sha256 !== expectedSha256.toLowerCase()
     ) {
       throw new InputArtifactError(
-        `[calculix_solve_static] STEP SHA-256 mismatch: expected ${expectedSha256.toLowerCase()}, computed ${sha256} from the private input snapshot.`,
+        `[${operation}] STEP SHA-256 mismatch: expected ${expectedSha256.toLowerCase()}, computed ${sha256} from the private input snapshot.`,
       );
     }
 
@@ -93,7 +97,7 @@ export async function snapshotStepArtifact(
     if (error instanceof InputArtifactError) throw error;
     if (error instanceof Deno.errors.NotFound) {
       throw new InputArtifactError(
-        `[calculix_solve_static] STEP file not found: ${sourcePath}`,
+        `[${operation}] STEP file not found: ${sourcePath}`,
       );
     }
     throw error;

@@ -2,7 +2,23 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
-## [Unreleased]
+## [0.8.0] - 2026-08-28
+
+### Added
+
+- `calculix_mesh_preflight` performs the attested STEP snapshot and Gmsh mesh
+  pass before a solve. Its closed `mesh-selection-preflight` `1.0` result
+  reports mesh-node bounds in mm, mesh counts, nodes for each named selection,
+  and structured `empty_selection` diagnostics. It has no material, load, deck,
+  `ccx`, or durable-run path.
+
+### Changed
+
+- Gmsh mesh inspection no longer counts C3D10 continuation lines as separate
+  elements.
+- Mesh preflight reports semantic unique-node counts for repeated and `GENERATE`
+  NSET blocks, refuses duplicate node IDs, and requires case-insensitively
+  unique selection names.
 
 ## [0.7.2] - 2026-08-27
 
@@ -49,42 +65,42 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ### Added
 
-- `scripts/stdio-shim.ts`: stdio → stateless-HTTP adapter. Classic-SDK stdio clients
-  (Docker MCP Toolkit, desktop hosts) get `initialize` answered locally from
-  `server/discover`; everything else is forwarded in the 2026-07-28 stateless envelope,
-  which is the only revision the server accepts on the wire.
-- `docker-entrypoint.sh`: the image now has two run modes — `http` (default, unchanged)
-  and `stdio` (`docker run -i <image> stdio`).
+- `scripts/stdio-shim.ts`: stdio → stateless-HTTP adapter. Classic-SDK stdio
+  clients (Docker MCP Toolkit, desktop hosts) get `initialize` answered locally
+  from `server/discover`; everything else is forwarded in the 2026-07-28
+  stateless envelope, which is the only revision the server accepts on the wire.
+- `docker-entrypoint.sh`: the image now has two run modes — `http` (default,
+  unchanged) and `stdio` (`docker run -i <image> stdio`).
 
 ## [0.5.0] - 2026-08-05
 
 ### Added
 
 - **`calculix_solve_creep`** — viscoplastic (*VISCO) creep analysis with the
-  Norton power law: STEP → Gmsh mesh → CalculiX creep solve → displacement
-  and von Mises stress AT THE END of the specified creep duration.
-  - `norton_a` and `norton_n` are required and explicit.  `norton_a` must be
-    in MPa^(-n) s^(-1); the tool description states the SI conversion (×10^(6n)).
-  - `duration_s` and `initial_time_increment_s` are required.  CalculiX may
+  Norton power law: STEP → Gmsh mesh → CalculiX creep solve → displacement and
+  von Mises stress AT THE END of the specified creep duration.
+  - `norton_a` and `norton_n` are required and explicit. `norton_a` must be in
+    MPa^(-n) s^(-1); the tool description states the SI conversion (×10^(6n)).
+  - `duration_s` and `initial_time_increment_s` are required. CalculiX may
     refine the increment if CETOL (1e-4 internal) is exceeded.
   - `parseDatLastIncrement` locates the final INCREMENT block before parsing —
     the global-max `parseDat` is wrong for creep under monotonically growing
     displacement, and would be wrong for relaxation scenarios.
   - `*SPECIFIC HEAT` and density are NOT required for this analysis type.
   - Validated on `bracket.step` (Al 6061-like, 8 mm linear tets, 500 N, 100 s,
-    A=1e-10 MPa^(-3) s^(-1), n=3): 7 increments, last at t=100 s:
-    max_disp ≈ 0.0129 mm, max_von_mises ≈ 8.64 MPa.
+    A=1e-10 MPa^(-3) s^(-1), n=3): 7 increments, last at t=100 s: max_disp ≈
+    0.0129 mm, max_von_mises ≈ 8.64 MPa.
 
 - **`calculix_solve_coupled_thermal`** — steady-state coupled
   temperature-displacement (*COUPLED TEMPERATURE-DISPLACEMENT, STEADY STATE)
   analysis: STEP → Gmsh mesh → CalculiX coupled solve → max temperature (°C),
   max displacement (mm), max von Mises stress (MPa).
-  - Thermal BCs by named face selection: `{ selection, temperature_c }`.
-    Each selection may carry only one temperature BC (duplicates rejected).
-    A selection may be in both `fixed` and `thermal_bcs` — mechanical (DOF 1–3)
+  - Thermal BCs by named face selection: `{ selection, temperature_c }`. Each
+    selection may carry only one temperature BC (duplicates rejected). A
+    selection may be in both `fixed` and `thermal_bcs` — mechanical (DOF 1–3)
     and thermal (DOF 11) are independent in CalculiX.
-  - Conductivity unit identity: 1 W/(m·K) = 1 mW/(mm·K) exactly (factors of
-    1000 cancel); `conductivity_w_mk` is written as-is into `*CONDUCTIVITY`.
+  - Conductivity unit identity: 1 W/(m·K) = 1 mW/(mm·K) exactly (factors of 1000
+    cancel); `conductivity_w_mk` is written as-is into `*CONDUCTIVITY`.
   - `*INITIAL CONDITIONS, TYPE=TEMPERATURE` is required by ccx and is injected
     automatically from `reference_temperature_c`.
   - `*SPECIFIC HEAT` is absent for steady state (intentional, not an omission;
@@ -95,16 +111,17 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
     LOADED=200°C, conductivity=167 W/(m·K), expansion=23.6e-6/K, ref=20°C):
     max_temp = 200°C, max_disp ≈ 0.1236 mm, max_von_mises ≈ 63.35 MPa.
 
-- **`calculix_solve_modal`** — eigenfrequency (*FREQUENCY) analysis: STEP →
-  Gmsh mesh → CalculiX free-vibration solve → natural frequencies in Hz.
-  - `density_kg_m3` is required (no default); converted to t/mm³ by exact
-    factor 1e-12 (1 kg/m³ = 1e-12 t/mm³ in the mm/N/MPa/t/s unit system).
+- **`calculix_solve_modal`** — eigenfrequency (*FREQUENCY) analysis: STEP → Gmsh
+  mesh → CalculiX free-vibration solve → natural frequencies in Hz.
+  - `density_kg_m3` is required (no default); converted to t/mm³ by exact factor
+    1e-12 (1 kg/m³ = 1e-12 t/mm³ in the mm/N/MPa/t/s unit system).
   - CalculiX requires uppercase-E scientific notation for density; the deck
-    builder uses `toCcxFloat()` (`Number.prototype.toExponential(6).toUpperCase()`)
-    to avoid the silent rejection of lowercase-e values.
+    builder uses `toCcxFloat()`
+    (`Number.prototype.toExponential(6).toUpperCase()`) to avoid the silent
+    rejection of lowercase-e values.
   - `n_modes` in [1, 30] (default 6). Output: `frequenciesHz[]` ascending.
-  - Validated on `bracket.step` (Al 6061, 4 mm quadratic mesh, fixed base):
-    f₁ = 1762.9 Hz, f₂ = 4732.5 Hz, f₃ = 9296.1 Hz.
+  - Validated on `bracket.step` (Al 6061, 4 mm quadratic mesh, fixed base): f₁ =
+    1762.9 Hz, f₂ = 4732.5 Hz, f₃ = 9296.1 Hz.
 
 - **`calculix_solve_buckling`** — linear buckling (*BUCKLE) analysis: STEP →
   Gmsh mesh → two-step ccx (step 1: *STATIC preload; step 2: *BUCKLE
@@ -119,9 +136,9 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ### Changed
 
-- `solveDeck()` now delegates subprocess management to the private
-  `runCcxRaw()` helper, eliminating code duplication across procedures.
-  External interface is unchanged.
+- `solveDeck()` now delegates subprocess management to the private `runCcxRaw()`
+  helper, eliminating code duplication across procedures. External interface is
+  unchanged.
 
 ## [0.4.0] - 2026-08-02
 
@@ -143,8 +160,8 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
 ### Changed
 
-- The result viewer requires the attested input artifact and exposes its
-  source, exact byte count and SHA-256. Results without provenance are rejected.
+- The result viewer requires the attested input artifact and exposes its source,
+  exact byte count and SHA-256. Results without provenance are rejected.
 
 ## [0.3.0] - 2026-08-01
 
