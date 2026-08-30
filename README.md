@@ -604,6 +604,27 @@ a fleet MCP run.
 - Durable, replay-checked MCP resources exist only for recorded static solves.
 - No solver success is converted into a requirement, fitness, safety,
   certification, or compliance conclusion.
+- I/O is budgeted by `src/api/budgets.ts` before a full in-memory read and while
+  streaming subprocess output. These are fleet MCP host limits, not Digital
+  Thread `verify.run-fea-static-proof@3` proof rules:
+
+  | Resource                        | Limit     | Error code                                            |
+  | ------------------------------- | --------- | ----------------------------------------------------- |
+  | STEP snapshot                   | 32 MiB    | `resource_limit` (`step_bytes`)                       |
+  | Named selections                | 32        | `resource_limit` (`selections`)                       |
+  | Mesh nodes                      | 250000    | `output_limit` (`mesh_nodes`)                         |
+  | Mesh volume elements            | 1000000   | `output_limit` (`mesh_elements`)                      |
+  | `mesh.inp` text lines processed | 1000000   | `output_limit` (`mesh_lines`)                         |
+  | Node ids per NSET               | 250000    | `output_limit` (`nset_nodes`)                         |
+  | Raw NSET entries parsed         | 1000000   | `output_limit` (`nset_entries`)                       |
+  | Total NSET memberships          | 1000000   | `output_limit` (`nset_memberships`)                   |
+  | Unique NSET names               | 34        | `output_limit` (`nset_sets`)                          |
+  | CalculiX deck                   | 65 MiB    | `resource_limit` (`deck_bytes`)                       |
+  | Gmsh or CalculiX stdout+stderr  | 8 MiB     | `output_limit`                                        |
+  | Executable version diagnostics  | 4 KiB     | `output_limit` (`version_probe_bytes`)                |
+  | Cleaned `mesh.inp`              | 64 MiB    | `output_limit` (`mesh_inp_bytes`)                     |
+  | `job.dat`                       | 64 MiB    | `output_limit` (`job_dat_bytes`)                      |
+  | Solve `timeout_ms`              | 120000 ms | validation or elapsed `resource_limit` (`timeout_ms`) |
 
 These limits describe the public contract, not everything that CalculiX itself
 can do.
@@ -638,11 +659,21 @@ the deck/parser change with a real CalculiX fixture plus an opt-in native test.
   expose the endpoint directly to an untrusted network.
 - STEP paths containing quotes, backslashes, or newlines are rejected before
   they can be embedded in Gmsh input.
-- Ordinary static, modal, buckling, creep, and coupled-thermal solves cap each
-  external Gmsh or CalculiX invocation at `120000` ms
-  (`MAX_ORDINARY_SOLVE_TIMEOUT_MS`). The default is the same; a larger
-  `timeout_ms` is rejected with structured `timeout_out_of_range` and
-  `inputPath: "timeout_ms"` before a STEP snapshot or native subprocess.
+- Ordinary static, modal, buckling, creep, coupled-thermal, and recorded static
+  solves cap each external Gmsh or CalculiX invocation at `120000` ms
+  (`MAX_SOLVE_TIMEOUT_MS`). The default is the same. Ordinary tools reject a
+  larger `timeout_ms` with structured `timeout_out_of_range` and
+  `inputPath: "timeout_ms"`; recorded static validation uses `resource_limit` at
+  `timeout_ms`. Both fail before a STEP snapshot or native subprocess.
+- Byte and cardinality overruns return `resource_limit` or `output_limit` with
+  `context.resource`, `context.limit`, `context.actual`, and `recovery`. Direct
+  TypeScript callers receive `ResourceBudgetError`; MCP callers receive the same
+  object as JSON text in an `isError: true` tool result. They do not truncate
+  untrusted input or subprocess logs after the fact.
+- Bounded file admission accepts regular files only after anchoring their
+  identity; FIFOs, devices, sockets, and directories are rejected. On POSIX,
+  native invocations run in isolated process groups so timeout and diagnostic
+  limits also terminate descendants that retain stdout or stderr.
 - The server allows four concurrent calls and queues backpressure. Recorded
   completion/retention still requires the one-writer-per-volume deployment rule
   described above.
@@ -670,6 +701,8 @@ Key files:
 ```text
 server.ts                          HTTP and native stdio application, tool/resource registration
 tests/stdio_test.ts                native stdio lifecycle and resource wire coverage
+src/api/budgets.ts                 byte and cardinality budgets, bounded reads, command capture
+src/api/input-artifact.ts          attested STEP snapshots
 src/api/gmsh.ts                    STEP meshing and bounding-box node sets
 src/api/ccx.ts                     deterministic decks, subprocess bridge, parsers
 src/results.ts                     closed result schemas

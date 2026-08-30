@@ -11,6 +11,16 @@
  * @module lib/calculix/api/ccx
  */
 
+import {
+  assertBudget,
+  MAX_DECK_BYTES,
+  MAX_DIAGNOSTICS_BYTES,
+  MAX_JOB_DAT_BYTES,
+  readTextFileBounded,
+  ResourceBudgetError,
+  runBoundedCommand,
+  tightenBudget,
+} from "./budgets.ts";
 import { parseNsetNodeIds } from "./gmsh.ts";
 
 /** Raised when the ccx executable cannot be found. */
@@ -77,6 +87,7 @@ export function assertMechanicalFixedAndLoadNodeDisjoint(
   try {
     sets = parseNsetNodeIds(inpText);
   } catch (error) {
+    if (error instanceof ResourceBudgetError) throw error;
     throw new SolveError(
       error instanceof Error ? error.message : String(error),
     );
@@ -253,51 +264,82 @@ interface CcxRawResult {
   diagnostics: string;
 }
 
+export interface CcxIoBudgets {
+  maxDiagnosticsBytes?: number;
+  maxJobDatBytes?: number;
+  maxDeckBytes?: number;
+}
+
 async function runCcxRaw(
   deck: string,
   timeoutMs: number,
+  budgets?: CcxIoBudgets,
 ): Promise<CcxRawResult> {
-  const workDir = await Deno.makeTempDir({ prefix: "calculix-solve-" });
-  await Deno.writeTextFile(`${workDir}/job.inp`, deck);
-
-  let child;
-  try {
-    child = new Deno.Command("ccx", {
-      args: ["-i", "job"],
-      cwd: workDir,
-      stdout: "piped",
-      stderr: "piped",
-    }).spawn();
-  } catch (e) {
-    await Deno.remove(workDir, { recursive: true }).catch(() => {});
-    if (e instanceof Deno.errors.NotFound) throw new CcxNotFoundError();
-    throw e;
+  const maxDeckBytes = tightenBudget(budgets?.maxDeckBytes, MAX_DECK_BYTES);
+  const maxDiagnosticsBytes = tightenBudget(
+    budgets?.maxDiagnosticsBytes,
+    MAX_DIAGNOSTICS_BYTES,
+  );
+  const maxJobDatBytes = tightenBudget(
+    budgets?.maxJobDatBytes,
+    MAX_JOB_DAT_BYTES,
+  );
+  if (!Number.isSafeInteger(deck.length) || deck.length > maxDeckBytes) {
+    assertBudget(
+      Number.isSafeInteger(deck.length) ? deck.length : maxDeckBytes + 1,
+      maxDeckBytes,
+      "resource_limit",
+      "deck_bytes",
+      "bytes",
+    );
   }
-
-  const timer = setTimeout(() => {
-    try {
-      child.kill("SIGKILL");
-    } catch { /* already exited */ }
-  }, timeoutMs);
-  const { success, stdout, stderr } = await child.output();
-  clearTimeout(timer);
-
+  const encodedDeck = new TextEncoder().encode(deck);
+  assertBudget(
+    encodedDeck.length,
+    maxDeckBytes,
+    "resource_limit",
+    "deck_bytes",
+    "bytes",
+  );
+  const workDir = await Deno.makeTempDir({ prefix: "calculix-solve-" });
   try {
-    const log = new TextDecoder().decode(stdout) +
-      new TextDecoder().decode(stderr);
-    if (!success || log.includes("*ERROR")) {
+    await Deno.writeFile(`${workDir}/job.inp`, encodedDeck);
+
+    let output: Awaited<ReturnType<typeof runBoundedCommand>>;
+    try {
+      output = await runBoundedCommand({
+        command: "ccx",
+        args: ["-i", "job"],
+        cwd: workDir,
+        timeoutMs,
+        maxOutputBytes: maxDiagnosticsBytes,
+        resource: "ccx_diagnostics",
+      });
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) throw new CcxNotFoundError();
+      throw error;
+    }
+
+    const log = output.diagnostics;
+    if (!output.success || log.includes("*ERROR")) {
       const errorLines = log.split("\n").filter((l) => l.includes("ERROR"))
         .join("\n");
       throw new SolveError(
-        `CalculiX failed${success ? "" : " (non-zero exit or timeout)"}: ${
-          errorLines || log.slice(-800)
-        }`,
+        `CalculiX failed${
+          output.success ? "" : " (non-zero exit or timeout)"
+        }: ${errorLines || log.slice(-800)}`,
       );
     }
-    let datText;
+    let datText: string;
     try {
-      datText = await Deno.readTextFile(`${workDir}/job.dat`);
-    } catch {
+      datText = await readTextFileBounded(
+        `${workDir}/job.dat`,
+        maxJobDatBytes,
+        "output_limit",
+        "job_dat_bytes",
+      );
+    } catch (error) {
+      if (error instanceof ResourceBudgetError) throw error;
       throw new SolveError("CalculiX finished but wrote no .dat result file.");
     }
     return { datText, diagnostics: log };
@@ -310,8 +352,9 @@ async function runCcxRaw(
 export async function solveDeck(
   deck: string,
   timeoutMs: number,
+  budgets?: CcxIoBudgets,
 ): Promise<SolveResult> {
-  return parseDat((await runCcxRaw(deck, timeoutMs)).datText);
+  return parseDat((await runCcxRaw(deck, timeoutMs, budgets)).datText);
 }
 
 /**
@@ -322,8 +365,9 @@ export async function solveDeck(
 export async function solveDeckRecorded(
   deck: string,
   timeoutMs: number,
+  budgets?: CcxIoBudgets,
 ): Promise<{ result: SolveResult; datText: string; diagnostics: string }> {
-  const raw = await runCcxRaw(deck, timeoutMs);
+  const raw = await runCcxRaw(deck, timeoutMs, budgets);
   return {
     result: parseDat(raw.datText),
     datText: raw.datText,

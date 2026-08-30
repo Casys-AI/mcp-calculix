@@ -4,6 +4,11 @@
  * independent and is not weakened by these helpers.
  */
 
+import {
+  MAX_SELECTIONS,
+  MAX_SOLVE_TIMEOUT_MS,
+  resourceBudgetError,
+} from "../api/budgets.ts";
 import type { FaceSelection } from "../api/gmsh.ts";
 
 export type OrdinaryInputErrorCode =
@@ -38,16 +43,14 @@ export class OrdinaryInputError extends Error {
 export const SELECTION_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,60}$/;
 export const SHA256_HEX_PATTERN = /^[a-fA-F0-9]{64}$/;
 export const DEFAULT_ELEMENT_ORDER = 2 as const;
-export const DEFAULT_TIMEOUT_MS = 120_000;
+export const DEFAULT_TIMEOUT_MS = MAX_SOLVE_TIMEOUT_MS;
 /**
- * Maximum wall-clock budget for each external Gmsh or CalculiX invocation in
- * a non-recorded solve. It deliberately matches the documented default: an
- * ordinary request cannot extend native subprocess lifetime through an
- * arbitrarily large timeout_ms value.
+ * Maximum wall-clock budget for each external Gmsh or CalculiX invocation.
+ * Ordinary and recorded static solves share the fleet cap.
  */
-export const MAX_ORDINARY_SOLVE_TIMEOUT_MS = 120_000;
-export const MAX_MESH_PREFLIGHT_SELECTIONS = 32;
-export const MAX_MESH_PREFLIGHT_TIMEOUT_MS = 120_000;
+export const MAX_ORDINARY_SOLVE_TIMEOUT_MS = MAX_SOLVE_TIMEOUT_MS;
+export const MAX_MESH_PREFLIGHT_SELECTIONS = MAX_SELECTIONS;
+export const MAX_MESH_PREFLIGHT_TIMEOUT_MS = MAX_SOLVE_TIMEOUT_MS;
 
 export type OrdinaryLoadsMode = "required" | "optional" | "none";
 
@@ -139,6 +142,7 @@ export function tightenCommonOrdinaryInputSchema(
   }
 
   if (isRecord(properties.selections)) {
+    properties.selections.maxItems = MAX_SELECTIONS;
     const item = properties.selections.items;
     if (isRecord(item) && isRecord(item.properties)) {
       if (isRecord(item.properties.name)) {
@@ -256,7 +260,11 @@ export function parseOrdinarySolveArgs(
     );
   }
 
-  const selections = parseSelections(args.selections, toolName);
+  const selections = parseSelections(
+    args.selections,
+    toolName,
+    MAX_SELECTIONS,
+  );
   const known = new Set(selections.map((selection) => selection.name));
 
   if (!Array.isArray(args.fixed) || args.fixed.length < 1) {
@@ -545,9 +553,12 @@ function parseSelections(
     throw fail(toolName, "selections must be a non-empty array.");
   }
   if (maximum !== undefined && value.length > maximum) {
-    throw fail(
-      toolName,
-      `selections must contain no more than ${maximum} items.`,
+    throw resourceBudgetError(
+      "resource_limit",
+      "selections",
+      maximum,
+      value.length,
+      "count",
     );
   }
 

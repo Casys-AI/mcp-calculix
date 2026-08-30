@@ -2,6 +2,30 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Documented byte and cardinality budgets for STEP snapshots, Gmsh/CalculiX
+  diagnostics, mesh files, decks, DAT results, named selections, and mesh
+  node/element/NSET counts. Oversized inputs and outputs fail with stable
+  `resource_limit` or `output_limit` errors that include `context` and
+  `recovery`.
+
+### Changed
+
+- STEP snapshots, Gmsh, and CalculiX now enforce those budgets before a full
+  in-memory read and while streaming subprocess stdout/stderr. Recorded static
+  `timeout_ms` shares the same 120000 ms fleet cap as ordinary solves.
+- Provider-produced mesh node, element, and NSET cardinalities are classified as
+  `output_limit`; mesh lines, unique NSET names, and NSET work are bounded, and
+  NSET membership is bounded both per set and cumulatively.
+- File admission anchors a regular-file identity, copies through complete
+  writes, and refuses special files. POSIX timeouts and diagnostic overruns
+  terminate the full isolated solver process group.
+- MCP transports map budget failures to `isError: true` with a JSON
+  `{code, context, recovery}` body.
+
 ## [0.8.2] - 2026-08-28
 
 ### Changed

@@ -186,9 +186,34 @@ Deno.test(
         method: "resources/read",
         params: { uri: VIEWER_URI },
       });
+      await send({
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: {
+          name: "calculix_solve_static",
+          arguments: {
+            step_path: runsDirectory,
+            mesh_size_mm: 4,
+            material: { e_mpa: 70_000, nu: 0.33 },
+            selections: [
+              {
+                name: "FIXED",
+                box: { min: [0, 0, 0], max: [1, 1, 1] },
+              },
+              {
+                name: "LOADED",
+                box: { min: [1, 0, 0], max: [2, 1, 1] },
+              },
+            ],
+            fixed: ["FIXED"],
+            loads: [{ selection: "LOADED", force_n: [0, 0, -500] }],
+          },
+        },
+      });
 
-      const responses = await collectResponses(server.stdout, 5, 30_000);
-      assertEquals(responses.length, 5, "expected five native stdio responses");
+      const responses = await collectResponses(server.stdout, 6, 30_000);
+      assertEquals(responses.length, 6, "expected six native stdio responses");
 
       const initialized = responseById(responses, 1);
       assertEquals(initialized.protocolVersion, "2025-06-18");
@@ -225,6 +250,18 @@ Deno.test(
         (content.text as string).includes("CalculiX Static Results"),
         true,
       );
+
+      const boundedError = responseById(responses, 6);
+      assertEquals(boundedError.isError, true);
+      const errorContent = boundedError.content as Array<
+        Record<string, unknown>
+      >;
+      const payload = JSON.parse(String(errorContent[0].text));
+      assertEquals(payload.code, "resource_limit");
+      assertEquals(payload.context.resource, "step_bytes");
+      assertEquals(payload.context.reason, "non_regular_file");
+      assertEquals(payload.context.tool, "calculix_solve_static");
+      assertEquals(typeof payload.recovery, "string");
     } finally {
       await writer.close().catch(() => undefined);
       try {

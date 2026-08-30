@@ -1,5 +1,12 @@
 /** Stable, content-attested STEP input snapshots for one CalculiX operation. */
 
+import {
+  copyFileBounded,
+  hashFileBounded,
+  MAX_STEP_BYTES,
+  ResourceBudgetError,
+} from "./budgets.ts";
+
 export interface InputArtifact {
   /** Private snapshot path actually passed to Gmsh. Ephemeral after the call. */
   path: string;
@@ -20,16 +27,6 @@ export class InputArtifactError extends Error {
 export interface StepSnapshot {
   artifact: InputArtifact;
   cleanup(): Promise<void>;
-}
-
-function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const contiguous = Uint8Array.from(bytes);
-  return crypto.subtle.digest("SHA-256", contiguous.buffer).then((digest) =>
-    Array.from(
-      new Uint8Array(digest),
-      (byte) => byte.toString(16).padStart(2, "0"),
-    ).join("")
-  );
 }
 
 /**
@@ -63,14 +60,27 @@ export async function snapshotStepArtifact(
     Deno.remove(workDir, { recursive: true }).catch(() => {});
 
   try {
-    await Deno.copyFile(sourcePath, snapshotPath);
-    const bytes = await Deno.readFile(snapshotPath);
-    if (bytes.length === 0) {
+    const copiedBytes = await copyFileBounded(
+      sourcePath,
+      snapshotPath,
+      MAX_STEP_BYTES,
+      "step_bytes",
+    );
+    if (copiedBytes === 0) {
       throw new InputArtifactError(
         `[${operation}] STEP input is empty: ${sourcePath}`,
       );
     }
-    const sha256 = await sha256Hex(bytes);
+    const { sha256, bytes } = await hashFileBounded(
+      snapshotPath,
+      MAX_STEP_BYTES,
+      "step_bytes",
+    );
+    if (bytes === 0) {
+      throw new InputArtifactError(
+        `[${operation}] STEP input is empty: ${sourcePath}`,
+      );
+    }
     if (
       expectedSha256 !== undefined &&
       sha256 !== expectedSha256.toLowerCase()
@@ -88,13 +98,14 @@ export async function snapshotStepArtifact(
         path: snapshotPath,
         sourcePath,
         sha256,
-        bytes: bytes.length,
+        bytes,
       },
       cleanup,
     };
   } catch (error) {
     await cleanup();
     if (error instanceof InputArtifactError) throw error;
+    if (error instanceof ResourceBudgetError) throw error;
     if (error instanceof Deno.errors.NotFound) {
       throw new InputArtifactError(
         `[${operation}] STEP file not found: ${sourcePath}`,

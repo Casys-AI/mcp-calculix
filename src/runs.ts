@@ -11,6 +11,11 @@
 
 import { join } from "@std/path";
 import { createHash } from "node:crypto";
+import {
+  MAX_SELECTIONS,
+  MAX_SOLVE_TIMEOUT_MS,
+  resourceBudgetError,
+} from "./api/budgets.ts";
 import { buildDeck, parseDat, type SolveResult } from "./api/ccx.ts";
 import { buildGeoScript, inspectInp } from "./api/gmsh.ts";
 
@@ -1675,6 +1680,15 @@ export function validateRecordedStaticRequest(
     );
   }
   assertPositiveSafeInteger(request.timeout_ms, "timeout_ms");
+  if ((request.timeout_ms as number) > MAX_SOLVE_TIMEOUT_MS) {
+    throw resourceBudgetError(
+      "resource_limit",
+      "timeout_ms",
+      MAX_SOLVE_TIMEOUT_MS,
+      request.timeout_ms as number,
+      "ms",
+    );
+  }
   const executionIdentity = parseRecordedStaticExecutionIdentity(
     request.execution_identity,
   );
@@ -1692,6 +1706,15 @@ export function validateRecordedStaticRequest(
   if (!Array.isArray(request.selections) || request.selections.length < 1) {
     throw new CalculixRunIntegrityError(
       "Recorded static request selections must be a non-empty array.",
+    );
+  }
+  if (request.selections.length > MAX_SELECTIONS) {
+    throw resourceBudgetError(
+      "resource_limit",
+      "selections",
+      MAX_SELECTIONS,
+      request.selections.length,
+      "count",
     );
   }
   const knownSelections = new Set<string>();
@@ -1798,7 +1821,7 @@ export function resolveRecordedStaticRequest(
     ...input,
     expected_step_sha256: expectedStepSha256,
     element_order: input.element_order ?? 2,
-    timeout_ms: input.timeout_ms ?? 120_000,
+    timeout_ms: input.timeout_ms ?? MAX_SOLVE_TIMEOUT_MS,
     execution_identity: executionIdentity,
   };
   return validateRecordedStaticRequest(withDefaults);

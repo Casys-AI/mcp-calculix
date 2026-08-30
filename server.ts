@@ -7,6 +7,7 @@ import {
   type ResourceHandler,
 } from "@casys/mcp-server";
 import { CalculixToolsClient } from "./src/client.ts";
+import { mapCalculixToolError } from "./src/api/budgets.ts";
 import { CalculixRunStore, type RecordedStaticRun } from "./src/runs.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
 
@@ -66,6 +67,7 @@ export function createCalculixServer(
     maxConcurrent: 4,
     backpressureStrategy: "queue",
     validateSchema: true,
+    toolErrorMapper: mapCalculixToolError,
     // Run evidence is registered both from the durable ledger at boot and
     // immediately after a successful solve, including after either transport starts.
     expectResources: true,

@@ -4,6 +4,7 @@ import {
   createCalculixServer,
   parseCli,
 } from "../server.ts";
+import { resourceBudgetError } from "../src/api/budgets.ts";
 
 const PROTOCOL_VERSION = "2026-07-28";
 const META = {
@@ -174,6 +175,69 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
       (resource.body.result.contents as Array<Record<string, unknown>>)[0]
         .text as string;
     assertEquals(html.includes("CalculiX Static Results"), true);
+  } finally {
+    await http.shutdown();
+  }
+});
+
+Deno.test("CalculiX maps budget failures to machine-readable MCP tool errors", async () => {
+  const { app } = createCalculixServer({
+    logger: () => {},
+    solveHandler: () => {
+      throw resourceBudgetError(
+        "resource_limit",
+        "step_bytes",
+        32,
+        33,
+        "bytes",
+      );
+    },
+  });
+  const port = freePort();
+  const http = await app.startHttp({
+    port,
+    hostname: "127.0.0.1",
+    onListen: () => {},
+  });
+  try {
+    const called = await rpc(`http://127.0.0.1:${port}/mcp`, "tools/call", {
+      name: "calculix_solve_static",
+      arguments: {
+        step_path: "/tmp/bracket.step",
+        mesh_size_mm: 4,
+        material: { e_mpa: 70_000, nu: 0.33 },
+        selections: [
+          {
+            name: "FIXED",
+            box: { min: [0, 0, 0], max: [1, 1, 1] },
+          },
+          {
+            name: "LOADED",
+            box: { min: [1, 0, 0], max: [2, 1, 1] },
+          },
+        ],
+        fixed: ["FIXED"],
+        loads: [{ selection: "LOADED", force_n: [0, 0, -500] }],
+      },
+    });
+    assertEquals(called.body.result.isError, true);
+    const content = called.body.result.content as Array<
+      Record<string, unknown>
+    >;
+    assertEquals(content[0].type, "text");
+    const payload = JSON.parse(String(content[0].text));
+    assertEquals(payload, {
+      code: "resource_limit",
+      context: {
+        resource: "step_bytes",
+        limit: 32,
+        actual: 33,
+        unit: "bytes",
+        tool: "calculix_solve_static",
+      },
+      recovery:
+        "Provide a smaller STEP export; the attested snapshot must be at most 32 bytes.",
+    });
   } finally {
     await http.shutdown();
   }

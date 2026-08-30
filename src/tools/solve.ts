@@ -28,6 +28,15 @@ import {
   solveDeck,
   solveDeckRecorded,
 } from "../api/ccx.ts";
+import {
+  MAX_SELECTIONS,
+  MAX_SOLVE_TIMEOUT_MS,
+  MAX_STEP_BYTES,
+  MAX_VERSION_PROBE_BYTES,
+  readBytesBounded,
+  ResourceBudgetError,
+  runBoundedCommand,
+} from "../api/budgets.ts";
 import { snapshotStepArtifact } from "../api/input-artifact.ts";
 import {
   artifactUri,
@@ -388,7 +397,12 @@ export function createRecordedStaticTools(
           let deck: string;
           let normalizedResult: Record<string, unknown>;
           try {
-            inputStep = await Deno.readFile(snapshot.artifact.path);
+            inputStep = await readBytesBounded(
+              snapshot.artifact.path,
+              MAX_STEP_BYTES,
+              "resource_limit",
+              "step_bytes",
+            );
             recordedMesh = await dependencies.meshStepRecorded({
               stepPath: snapshot.artifact.path,
               selections,
@@ -666,22 +680,24 @@ async function executableVersion(
   command: "gmsh" | "ccx",
   args: string[],
 ): Promise<string> {
-  let output: Deno.CommandOutput;
+  let output: Awaited<ReturnType<typeof runBoundedCommand>>;
   try {
-    output = await new Deno.Command(command, {
+    output = await runBoundedCommand({
+      command,
       args,
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
+      timeoutMs: MAX_SOLVE_TIMEOUT_MS,
+      maxOutputBytes: MAX_VERSION_PROBE_BYTES,
+      resource: "version_probe_bytes",
+    });
   } catch (error) {
+    if (error instanceof ResourceBudgetError) throw error;
     throw new Error(
       `Cannot attest ${command} version before execution: ${
         errorMessage(error)
       }`,
     );
   }
-  const text = new TextDecoder().decode(output.stdout) +
-    new TextDecoder().decode(output.stderr);
+  const text = output.diagnostics;
   const version = text.trim().replaceAll(/\s+/g, " ");
   // `ccx -v` deliberately exits 201 after printing its version on Ubuntu's
   // CalculiX 2.21 package; acceptance is based on the observed version text,
@@ -731,12 +747,10 @@ function recordedStaticInputSchema(): Record<string, unknown> {
   properties.timeout_ms = {
     type: "integer",
     minimum: 1,
+    maximum: MAX_SOLVE_TIMEOUT_MS,
     description:
-      "Time limit per external run (mesh, solve) in ms, default 120000.",
+      "Time limit per external run (mesh, solve) in ms, default and maximum 120000.",
   };
-  // Recorded requests retain their existing durable contract. The ordinary
-  // solve cap is enforced only by parseOrdinarySolveArgs, which this handler
-  // intentionally does not use.
   const material = properties.material as Record<string, unknown>;
   const materialProperties = material.properties as Record<string, unknown>;
   materialProperties.e_mpa = {
@@ -749,6 +763,7 @@ function recordedStaticInputSchema(): Record<string, unknown> {
     exclusiveMaximum: 0.5,
   };
   const selections = properties.selections as Record<string, unknown>;
+  selections.maxItems = MAX_SELECTIONS;
   const selectionItem = selections.items as Record<string, unknown>;
   const selectionProperties = selectionItem.properties as Record<
     string,

@@ -13,6 +13,26 @@
  * @module lib/calculix/api/gmsh
  */
 
+import {
+  assertBudget,
+  copyFileBounded,
+  hashFileBounded,
+  MAX_DIAGNOSTICS_BYTES,
+  MAX_MESH_ELEMENTS,
+  MAX_MESH_INP_BYTES,
+  MAX_MESH_LINES,
+  MAX_MESH_NODES,
+  MAX_NSET_ENTRIES,
+  MAX_NSET_NODES,
+  MAX_NSET_SETS,
+  MAX_STEP_BYTES,
+  MAX_TOTAL_NSET_MEMBERSHIPS,
+  readTextFileBounded,
+  ResourceBudgetError,
+  runBoundedCommand,
+  tightenBudget,
+} from "./budgets.ts";
+
 /** Raised when the gmsh executable cannot be found. */
 export class GmshNotFoundError extends Error {
   constructor() {
@@ -38,6 +58,22 @@ export interface FaceSelection {
   box: { min: [number, number, number]; max: [number, number, number] };
 }
 
+export interface MeshCardinalityLimits {
+  maxMeshNodes?: number;
+  maxMeshElements?: number;
+  maxMeshLines?: number;
+  maxNsetNodes?: number;
+  maxNsetEntries?: number;
+  maxNsetSets?: number;
+  maxTotalNsetMemberships?: number;
+}
+
+export interface MeshIoBudgets extends MeshCardinalityLimits {
+  maxDiagnosticsBytes?: number;
+  maxMeshInpBytes?: number;
+  maxStepBytes?: number;
+}
+
 export interface MeshOptions {
   stepPath: string;
   selections: FaceSelection[];
@@ -46,6 +82,8 @@ export interface MeshOptions {
   /** 1 = linear tets (C3D4), 2 = quadratic (C3D10, better stresses). */
   elementOrder: 1 | 2;
   timeoutMs: number;
+  /** Optional tighter budgets; values above the fleet maxima are ignored. */
+  budgets?: MeshIoBudgets;
 }
 
 export interface MeshResult {
@@ -158,10 +196,14 @@ export function buildGeoScript(options: MeshOptions): string {
  * *ELEMENT blocks (C3D*) and *NSET blocks. Surface/line elements and their
  * ELSETs go.
  */
-export function cleanInp(raw: string): string {
+export function cleanInp(
+  raw: string,
+  limits?: MeshCardinalityLimits,
+): string {
+  const maxMeshLines = resolveMeshCardinalityLimits(limits).maxMeshLines;
   const out: string[] = [];
   let skip = false;
-  for (const line of raw.split("\n")) {
+  for (const line of boundedLines(raw, maxMeshLines)) {
     if (line.startsWith("*ELEMENT")) {
       skip = !line.includes("type=C3D");
     } else if (line.startsWith("*ELSET")) {
@@ -177,7 +219,11 @@ export function cleanInp(raw: string): string {
 }
 
 /** Parse node/element counts and per-NSET sizes out of a cleaned .inp. */
-export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
+export function inspectInp(
+  inpText: string,
+  limits?: MeshCardinalityLimits,
+): Omit<MeshResult, "inpText"> {
+  const cardinality = resolveMeshCardinalityLimits(limits);
   let nodeCount = 0;
   let elementCount = 0;
   let maxNodeId = 0;
@@ -188,7 +234,7 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
   let currentSet = "";
   let elementContinues = false;
 
-  for (const rawLine of inpText.split("\n")) {
+  for (const rawLine of boundedLines(inpText, cardinality.maxMeshLines)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("**")) continue;
     if (/^\*NODE\b/i.test(line)) {
@@ -204,7 +250,19 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
     if (/^\*NSET\b/i.test(line)) {
       section = "nset";
       currentSet = line.match(/NSET\s*=\s*([A-Za-z][A-Za-z0-9_]*)/i)?.[1] ?? "";
-      if (currentSet) nsetNames.set(currentSet.toUpperCase(), currentSet);
+      if (currentSet) {
+        const canonical = currentSet.toUpperCase();
+        if (!nsetNames.has(canonical)) {
+          assertBudget(
+            nsetNames.size + 1,
+            cardinality.maxNsetSets,
+            "output_limit",
+            "nset_sets",
+            "count",
+          );
+          nsetNames.set(canonical, currentSet);
+        }
+      }
       elementContinues = false;
       continue;
     }
@@ -225,16 +283,32 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
       }
       nodeIds.add(id);
       nodeCount++;
+      assertBudget(
+        nodeCount,
+        cardinality.maxMeshNodes,
+        "output_limit",
+        "mesh_nodes",
+        "count",
+      );
       if (id > maxNodeId) maxNodeId = id;
     } else if (section === "element") {
       // Continuation lines of a C3D10 element start with node ids only; count
       // lines that begin a new element (first field is the element id and the
       // previous line did not end with a comma).
-      if (!elementContinues) elementCount++;
+      if (!elementContinues) {
+        elementCount++;
+        assertBudget(
+          elementCount,
+          cardinality.maxMeshElements,
+          "output_limit",
+          "mesh_elements",
+          "count",
+        );
+      }
       elementContinues = line.endsWith(",");
     }
   }
-  const parsedSets = parseNsetNodeIds(inpText);
+  const parsedSets = parseNsetNodeIds(inpText, cardinality);
   const nodesPerSet = Object.fromEntries(
     [...nsetNames].map((
       [canonical, presented],
@@ -248,14 +322,18 @@ export function inspectInp(inpText: string): Omit<MeshResult, "inpText"> {
  * separate from `inspectInp` so ordinary solve callers retain their existing
  * result contract.
  */
-export function inspectMeshNodeBounds(inpText: string): MeshBounds {
+export function inspectMeshNodeBounds(
+  inpText: string,
+  limits?: MeshCardinalityLimits,
+): MeshBounds {
+  const cardinality = resolveMeshCardinalityLimits(limits);
   let inNodeSection = false;
   let nodeCount = 0;
   const nodeIds = new Set<number>();
   const min: [number, number, number] = [Infinity, Infinity, Infinity];
   const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
 
-  for (const rawLine of inpText.split("\n")) {
+  for (const rawLine of boundedLines(inpText, cardinality.maxMeshLines)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("**")) continue;
     if (line.startsWith("*")) {
@@ -291,6 +369,13 @@ export function inspectMeshNodeBounds(inpText: string): MeshBounds {
       max[axis] = Math.max(max[axis], coordinates[axis]);
     }
     nodeCount++;
+    assertBudget(
+      nodeCount,
+      cardinality.maxMeshNodes,
+      "output_limit",
+      "mesh_nodes",
+      "count",
+    );
   }
 
   if (nodeCount === 0) {
@@ -310,11 +395,22 @@ export function inspectMeshNodeBounds(inpText: string): MeshBounds {
  */
 export function parseNsetNodeIds(
   inpText: string,
+  limits?: MeshCardinalityLimits,
 ): Record<string, Set<number>> {
+  const cardinality = resolveMeshCardinalityLimits(limits);
+  const maxNsetNodes = cardinality.maxNsetNodes;
   const sets: Record<string, Set<number>> = {};
+  const entries = {
+    total: 0,
+    limit: cardinality.maxNsetEntries,
+  };
+  const memberships = {
+    total: 0,
+    limit: cardinality.maxTotalNsetMemberships,
+  };
   let current: { name: string; generate: boolean } | null = null;
 
-  for (const rawLine of inpText.split("\n")) {
+  for (const rawLine of boundedLines(inpText, cardinality.maxMeshLines)) {
     const line = rawLine.trim();
     if (line.startsWith("*")) {
       if (/^\*nset\b/i.test(line)) {
@@ -325,27 +421,69 @@ export function parseNsetNodeIds(
         }
         const name = rawName.toUpperCase();
         current = { name, generate: /\bGENERATE\b/i.test(line) };
-        sets[name] = sets[name] ?? new Set<number>();
+        if (sets[name] === undefined) {
+          assertBudget(
+            Object.keys(sets).length + 1,
+            cardinality.maxNsetSets,
+            "output_limit",
+            "nset_sets",
+            "count",
+          );
+          sets[name] = new Set<number>();
+        }
       } else {
         current = null;
       }
       continue;
     }
     if (!current || !line || line.startsWith("**")) continue;
-    const numbers = line.split(",").map((token) => token.trim()).filter(
-      Boolean,
-    ).map(Number);
     if (current.generate) {
-      applyGenerateRange(sets, current.name, numbers);
+      const numbers: number[] = [];
+      for (const number of commaSeparatedNumbers(line)) {
+        numbers.push(number);
+        if (numbers.length > 3) break;
+      }
+      applyGenerateRange(
+        sets,
+        current.name,
+        numbers,
+        maxNsetNodes,
+        entries,
+        memberships,
+      );
       continue;
     }
-    for (const id of numbers) {
+    for (const id of commaSeparatedNumbers(line)) {
+      entries.total++;
+      assertBudget(
+        entries.total,
+        entries.limit,
+        "output_limit",
+        "nset_entries",
+        "count",
+      );
       if (!Number.isSafeInteger(id) || id < 1) {
         throw new Error(
           `NSET '${current.name}' contains an invalid node id.`,
         );
       }
+      const before = sets[current.name].size;
       sets[current.name].add(id);
+      if (sets[current.name].size !== before) memberships.total++;
+      assertBudget(
+        sets[current.name].size,
+        maxNsetNodes,
+        "output_limit",
+        "nset_nodes",
+        "count",
+      );
+      assertBudget(
+        memberships.total,
+        memberships.limit,
+        "output_limit",
+        "nset_memberships",
+        "count",
+      );
     }
   }
   return sets;
@@ -355,6 +493,9 @@ function applyGenerateRange(
   sets: Record<string, Set<number>>,
   name: string,
   values: number[],
+  maxNsetNodes: number,
+  entries: { total: number; limit: number },
+  memberships: { total: number; limit: number },
 ): void {
   if (values.length !== 2 && values.length !== 3) {
     throw new Error(
@@ -376,6 +517,22 @@ function applyGenerateRange(
     sets[name] = ids;
     return;
   }
+  const rangeCount = generateRangeCount(start, end, step);
+  assertBudget(
+    rangeCount,
+    maxNsetNodes,
+    "output_limit",
+    "nset_nodes",
+    "count",
+  );
+  entries.total += rangeCount;
+  assertBudget(
+    entries.total,
+    entries.limit,
+    "output_limit",
+    "nset_entries",
+    "count",
+  );
   for (
     let id = start;
     ascending ? id <= end : id >= end;
@@ -386,9 +543,91 @@ function applyGenerateRange(
         `NSET '${name}' GENERATE produced a non-positive node id.`,
       );
     }
+    const before = ids.size;
     ids.add(id);
+    if (ids.size !== before) memberships.total++;
+    assertBudget(
+      ids.size,
+      maxNsetNodes,
+      "output_limit",
+      "nset_nodes",
+      "count",
+    );
+    assertBudget(
+      memberships.total,
+      memberships.limit,
+      "output_limit",
+      "nset_memberships",
+      "count",
+    );
   }
   sets[name] = ids;
+}
+
+/** Parse one comma-delimited NSET line without allocating an array of tokens. */
+function* commaSeparatedNumbers(line: string): Generator<number> {
+  let start = 0;
+  while (start <= line.length) {
+    const comma = line.indexOf(",", start);
+    const end = comma === -1 ? line.length : comma;
+    const token = line.slice(start, end).trim();
+    if (token.length > 0) yield Number(token);
+    if (comma === -1) return;
+    start = comma + 1;
+  }
+}
+
+/** Iterate mesh text without allocating one array entry per line. */
+function* boundedLines(text: string, limit: number): Generator<string> {
+  let start = 0;
+  let lines = 0;
+  while (start <= text.length) {
+    lines++;
+    assertBudget(lines, limit, "output_limit", "mesh_lines", "count");
+    const newline = text.indexOf("\n", start);
+    if (newline === -1) {
+      yield text.slice(start);
+      return;
+    }
+    yield text.slice(start, newline);
+    start = newline + 1;
+  }
+}
+
+function generateRangeCount(start: number, end: number, step: number): number {
+  const absStep = Math.abs(step);
+  const distance = Math.abs(end - start);
+  if (absStep < 1) return Number.POSITIVE_INFINITY;
+  if (distance / absStep >= Number.MAX_SAFE_INTEGER) {
+    return Number.MAX_SAFE_INTEGER + 1;
+  }
+  return Math.floor(distance / absStep) + 1;
+}
+
+function resolveMeshCardinalityLimits(limits?: MeshCardinalityLimits): {
+  maxMeshNodes: number;
+  maxMeshElements: number;
+  maxMeshLines: number;
+  maxNsetNodes: number;
+  maxNsetEntries: number;
+  maxNsetSets: number;
+  maxTotalNsetMemberships: number;
+} {
+  return {
+    maxMeshNodes: tightenBudget(limits?.maxMeshNodes, MAX_MESH_NODES),
+    maxMeshElements: tightenBudget(limits?.maxMeshElements, MAX_MESH_ELEMENTS),
+    maxMeshLines: tightenBudget(limits?.maxMeshLines, MAX_MESH_LINES),
+    maxNsetNodes: tightenBudget(limits?.maxNsetNodes, MAX_NSET_NODES),
+    maxNsetEntries: tightenBudget(
+      limits?.maxNsetEntries,
+      MAX_NSET_ENTRIES,
+    ),
+    maxNsetSets: tightenBudget(limits?.maxNsetSets, MAX_NSET_SETS),
+    maxTotalNsetMemberships: tightenBudget(
+      limits?.maxTotalNsetMemberships,
+      MAX_TOTAL_NSET_MEMBERSHIPS,
+    ),
+  };
 }
 
 /** Run Gmsh on a STEP file and return the cleaned mesh. */
@@ -420,7 +659,10 @@ export async function meshStepPreflight(
   const result = await meshStepWithSelectionDiagnostics(options);
   return {
     mesh: result.recorded.mesh,
-    bounds: inspectMeshNodeBounds(result.recorded.mesh.inpText),
+    bounds: inspectMeshNodeBounds(
+      result.recorded.mesh.inpText,
+      options.budgets,
+    ),
     selectionErrors: result.selectionErrors,
   };
 }
@@ -436,64 +678,71 @@ async function meshStepWithSelectionDiagnostics(
         `.geo script (quote, backslash or newline): ${options.stepPath}`,
     );
   }
-  try {
-    await Deno.stat(options.stepPath);
-  } catch {
-    throw new MeshingError(`STEP file not found: ${options.stepPath}`);
-  }
-
   const workDir = await Deno.makeTempDir({ prefix: "calculix-mesh-" });
   const geoPath = `${workDir}/mesh.geo`;
   const inpPath = `${workDir}/mesh.inp`;
   const stableInputPath = `${workDir}/input.step`;
   try {
-    let inputStep: Uint8Array;
+    const maxStepBytes = tightenBudget(
+      options.budgets?.maxStepBytes,
+      MAX_STEP_BYTES,
+    );
+    const maxDiagnosticsBytes = tightenBudget(
+      options.budgets?.maxDiagnosticsBytes,
+      MAX_DIAGNOSTICS_BYTES,
+    );
+    const maxMeshInpBytes = tightenBudget(
+      options.budgets?.maxMeshInpBytes,
+      MAX_MESH_INP_BYTES,
+    );
+    let hashedInput: { sha256: string; bytes: number };
     try {
       // Do not interpolate a caller/private temporary path into the evidence.
       // The recorded program has a stable relative dependency and Gmsh runs in
       // the directory containing the exact private bytes.
-      inputStep = await Deno.readFile(options.stepPath);
-      if (inputStep.length < 1) {
+      const copiedBytes = await copyFileBounded(
+        options.stepPath,
+        stableInputPath,
+        maxStepBytes,
+        "step_bytes",
+      );
+      if (copiedBytes < 1) {
         throw new MeshingError("STEP file is empty.");
       }
-      await Deno.writeFile(stableInputPath, inputStep, { mode: 0o400 });
+      await Deno.chmod(stableInputPath, 0o400);
+      hashedInput = await hashFileBounded(
+        stableInputPath,
+        maxStepBytes,
+        "step_bytes",
+      );
+      if (hashedInput.bytes < 1) {
+        throw new MeshingError("STEP file is empty.");
+      }
     } catch (error) {
       if (error instanceof MeshingError) throw error;
+      if (error instanceof ResourceBudgetError) throw error;
       throw new MeshingError(
         `Unable to prepare private STEP input: ${String(error)}`,
       );
     }
-    const copiedInputStep = await Deno.readFile(stableInputPath);
-    const inputStepSha256 = await sha256Hex(copiedInputStep);
     const geoText = buildGeoScript({ ...options, stepPath: "input.step" });
     await Deno.writeTextFile(geoPath, geoText);
 
-    let child;
+    let output: Awaited<ReturnType<typeof runBoundedCommand>>;
     try {
-      child = new Deno.Command("gmsh", {
+      output = await runBoundedCommand({
+        command: "gmsh",
         args: ["mesh.geo", "-3", "-format", "inp", "-o", "mesh.inp"],
         cwd: workDir,
-        stdout: "piped",
-        stderr: "piped",
-      }).spawn();
+        timeoutMs: options.timeoutMs,
+        maxOutputBytes: maxDiagnosticsBytes,
+        resource: "gmsh_diagnostics",
+      });
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) throw new GmshNotFoundError();
       throw error;
     }
-
-    const timer = setTimeout(() => {
-      try {
-        child.kill("SIGKILL");
-      } catch { /* already exited */ }
-    }, options.timeoutMs);
-    let output: Deno.CommandOutput;
-    try {
-      output = await child.output();
-    } finally {
-      clearTimeout(timer);
-    }
-    const diagnostics = new TextDecoder().decode(output.stdout) +
-      new TextDecoder().decode(output.stderr);
+    const diagnostics = output.diagnostics;
 
     if (!output.success) {
       throw new MeshingError(
@@ -505,13 +754,19 @@ async function meshStepWithSelectionDiagnostics(
 
     let raw: string;
     try {
-      raw = await Deno.readTextFile(inpPath);
-    } catch {
+      raw = await readTextFileBounded(
+        inpPath,
+        maxMeshInpBytes,
+        "output_limit",
+        "mesh_inp_bytes",
+      );
+    } catch (error) {
+      if (error instanceof ResourceBudgetError) throw error;
       throw new MeshingError("gmsh reported success but wrote no mesh file.");
     }
 
-    const inpText = cleanInp(raw);
-    const inspection = inspectInp(inpText);
+    const inpText = cleanInp(raw, options.budgets);
+    const inspection = inspectInp(inpText, options.budgets);
 
     const selectionErrors = options.selections.flatMap((selection) => {
       const count = inspection.nodesPerSet[selection.name] ?? 0;
@@ -531,8 +786,8 @@ async function meshStepWithSelectionDiagnostics(
         mesh: { inpText, ...inspection },
         artifacts: {
           geoText,
-          inputStepSha256,
-          inputStepBytes: copiedInputStep.length,
+          inputStepSha256: hashedInput.sha256,
+          inputStepBytes: hashedInput.bytes,
           diagnostics,
           cleanedInpText: inpText,
         },
@@ -542,12 +797,4 @@ async function meshStepWithSelectionDiagnostics(
   } finally {
     await Deno.remove(workDir, { recursive: true }).catch(() => {});
   }
-}
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", Uint8Array.from(bytes));
-  return Array.from(
-    new Uint8Array(digest),
-    (byte) => byte.toString(16).padStart(2, "0"),
-  ).join("");
 }

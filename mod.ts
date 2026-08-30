@@ -73,6 +73,31 @@ export type {
 } from "./src/results.ts";
 
 export {
+  mapCalculixToolError,
+  MAX_DECK_BYTES,
+  MAX_DIAGNOSTICS_BYTES,
+  MAX_JOB_DAT_BYTES,
+  MAX_MESH_ELEMENTS,
+  MAX_MESH_INP_BYTES,
+  MAX_MESH_LINES,
+  MAX_MESH_NODES,
+  MAX_NSET_ENTRIES,
+  MAX_NSET_NODES,
+  MAX_NSET_SETS,
+  MAX_SELECTIONS,
+  MAX_SOLVE_TIMEOUT_MS,
+  MAX_STEP_BYTES,
+  MAX_TOTAL_NSET_MEMBERSHIPS,
+  MAX_VERSION_PROBE_BYTES,
+  ResourceBudgetError,
+} from "./src/api/budgets.ts";
+export type {
+  ResourceBudgetCode,
+  ResourceBudgetContext,
+  ResourceBudgetName,
+  ResourceBudgetUnit,
+} from "./src/api/budgets.ts";
+export {
   buildGeoScript,
   cleanInp,
   GmshNotFoundError,

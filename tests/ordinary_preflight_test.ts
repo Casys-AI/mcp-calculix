@@ -11,6 +11,7 @@ import { coupledThermalTools } from "../src/tools/coupled_thermal.ts";
 import { creepTools } from "../src/tools/creep.ts";
 import { modalTools } from "../src/tools/modal.ts";
 import {
+  MAX_MESH_PREFLIGHT_SELECTIONS,
   MAX_ORDINARY_SOLVE_TIMEOUT_MS,
   OrdinaryInputError,
 } from "../src/tools/ordinary-preflight.ts";
@@ -145,11 +146,16 @@ Deno.test("ordinary input schemas tighten shared physical bounds", () => {
     assertEquals(material.properties.e_mpa.exclusiveMinimum, 0, name);
     assertEquals(material.properties.nu.exclusiveMinimum, 0, name);
     assertEquals(material.properties.nu.exclusiveMaximum, 0.5, name);
-    const selectionName = (properties.selections as {
+    const selections = properties.selections as {
+      maxItems: number;
       items: { properties: { name: { pattern: string } } };
-    })
-      .items.properties.name.pattern;
-    assertEquals(selectionName, "^[A-Za-z][A-Za-z0-9_]{0,60}$", name);
+    };
+    assertEquals(selections.maxItems, MAX_MESH_PREFLIGHT_SELECTIONS, name);
+    assertEquals(
+      selections.items.properties.name.pattern,
+      "^[A-Za-z][A-Za-z0-9_]{0,60}$",
+      name,
+    );
   }
 });
 
