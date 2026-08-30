@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: docker-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   qualify:
     runs-on: ubuntu-latest
@@ -28,9 +32,30 @@ jobs:
     needs: qualify
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
+      - name: Refuse to overwrite an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_status="$(curl -sS -o /tmp/existing-release.json -w '%{http_code}' \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")"
+          case "$release_status" in
+            404) ;;
+            200)
+              echo "Release $GITHUB_REF_NAME already exists; refusing to republish mutable image tags." >&2
+              exit 1
+              ;;
+            *)
+              echo "Could not prove that release $GITHUB_REF_NAME is absent (HTTP $release_status)." >&2
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v5
 
       - uses: docker/setup-qemu-action@v3
@@ -61,9 +86,73 @@ jobs:
             type=semver,pattern={{version}}
 
       - uses: docker/build-push-action@v6
+        id: image
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+
+      - name: Verify the exact JSR release before recording it
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          commit="$(git rev-parse HEAD)"
+          checkout="$PWD"
+          cd "$(mktemp -d)"
+          for attempt in $(seq 1 30); do
+            if deno run --no-config --no-lock --reload \
+              --minimum-dependency-age=0 \
+              --allow-read="$checkout" --allow-net=jsr.io,rekor.sigstore.dev \
+              "$checkout/scripts/verify-jsr-release.ts" \
+              "$checkout" "$version" "$commit"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 30 ]; then
+              sleep 10
+            fi
+          done
+          echo "JSR release @casys/mcp-calculix@${version} was not importable." >&2
+          exit 1
+
+      - name: Record the exact published release identity
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          if ! [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Published image digest is missing or malformed: $IMAGE_DIGEST" >&2
+            exit 1
+          fi
+          commit="$(git rev-parse HEAD)"
+          jq -n \
+            --arg version "${GITHUB_REF_NAME#v}" \
+            --arg tag "$GITHUB_REF_NAME" \
+            --arg commit "$commit" \
+            --arg jsr "jsr:@casys/mcp-calculix@${GITHUB_REF_NAME#v}" \
+            --arg image "ghcr.io/casys-ai/mcp-calculix@$IMAGE_DIGEST" \
+            '{schema_version:"1.0",version:$version,tag:$tag,commit:$commit,jsr:$jsr,image:$image,platforms:["linux/amd64","linux/arm64"]}' \
+            > release-identity.json
+          jq -e \
+            --arg version "${GITHUB_REF_NAME#v}" \
+            --arg tag "$GITHUB_REF_NAME" \
+            --arg commit "$commit" \
+            '.schema_version == "1.0" and
+             .version == $version and .tag == $tag and .commit == $commit and
+             (.jsr == ("jsr:@casys/mcp-calculix@" + $version)) and
+             (.image | test("^ghcr\\.io/casys-ai/mcp-calculix@sha256:[0-9a-f]{64}$")) and
+             .platforms == ["linux/amd64", "linux/arm64"]' \
+            release-identity.json >/dev/null
+
+      - name: Publish the GitHub release identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "mcp-calculix ${GITHUB_REF_NAME#v}" \
+            --notes "Bounded CalculiX MCP release. Deploy the exact GHCR digest recorded in release-identity.json." \
+            release-identity.json

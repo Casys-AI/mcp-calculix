@@ -14,7 +14,7 @@ STEP part -> private SHA-256 snapshot -> Gmsh C3D4/C3D10 mesh
           -> code-generated CalculiX deck -> parsed physical observations
 ```
 
-Version `0.8.2` provides native, era-aware stdio and supports linear static,
+Version `0.8.3` provides native, era-aware stdio and supports linear static,
 modal, linear buckling, Norton-law creep, and steady-state coupled
 temperature-displacement analyses. It also provides an identity-bound recorded
 variant of the static solve with exact MCP evidence resources and read-only
@@ -28,23 +28,25 @@ observations, never a safety, compliance, or requirement verdict.
 
 ## Quick start
 
-The qualified multi-architecture deployment image is
-`ghcr.io/casys-ai/mcp-calculix@sha256:ea933089d0941dd7c45d7e00a825be64c412edbb334a05dc568745ce885abfc8`.
-It is available for `linux/amd64` and `linux/arm64`; its entrypoint is
-`./docker-entrypoint.sh` and its default command is `http`.
+The release publishes a multi-architecture image for `linux/amd64` and
+`linux/arm64`. Its entrypoint is `./docker-entrypoint.sh` and its default
+command is `http`. The exact index digest is recorded after publication in the
+[v0.8.3 release identity](https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.3/release-identity.json).
 
-`ghcr.io/casys-ai/mcp-calculix:0.8.2` is a mutable discovery tag, not a
+`ghcr.io/casys-ai/mcp-calculix:0.8.3` is a mutable discovery tag, not a
 qualified deployment identity. `ghcr.io/casys-ai/mcp-calculix:latest` is also
-mutable. Use a tag only to discover a release, then deploy the published index
-digest above.
+mutable. Read the immutable deployment reference from the release identity:
+
+```bash
+RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.3/release-identity.json
+curl -fsSLo release-identity.json "$RELEASE_IDENTITY_URL"
+IMAGE_REF="$(jq -er '.image | select(test("^ghcr\\.io/casys-ai/mcp-calculix@sha256:[0-9a-f]{64}$"))' release-identity.json)"
+docker pull "$IMAGE_REF"
+```
 
 Ephemeral STEP and mesh directories are removed on a best-effort basis after
 each call. A cleanup failure does not turn a completed preflight into durable
 evidence; operators should monitor and reclaim stale OS temporary directories.
-
-```bash
-docker pull ghcr.io/casys-ai/mcp-calculix@sha256:ea933089d0941dd7c45d7e00a825be64c412edbb334a05dc568745ce885abfc8
-```
 
 ### HTTP over Docker
 
@@ -56,7 +58,7 @@ docker run --rm --name mcp-calculix \
   -v /absolute/path/to/step-files:/inputs:ro \
   -v calculix-runs:/var/lib/mcp-calculix-runs \
   -e CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs \
-  ghcr.io/casys-ai/mcp-calculix@sha256:ea933089d0941dd7c45d7e00a825be64c412edbb334a05dc568745ce885abfc8 http
+  "$IMAGE_REF" http
 ```
 
 The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
@@ -79,10 +81,10 @@ curl -s -X POST http://127.0.0.1:3015/mcp \
 The server starts the era-aware stdio transport directly. It accepts classic
 `2025-06-18` initialization and keeps JSON-RPC on stdout.
 
-Run the 0.8.2 JSR entrypoint:
+Run the 0.8.3 JSR entrypoint:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.2/server --stdio
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.3/server --stdio
 ```
 
 Or run it from a source tree:
@@ -109,7 +111,7 @@ stdin open with `-i`:
         "calculix-runs:/var/lib/mcp-calculix-runs",
         "-e",
         "CALCULIX_RUNS_DIRECTORY=/var/lib/mcp-calculix-runs",
-        "ghcr.io/casys-ai/mcp-calculix@sha256:ea933089d0941dd7c45d7e00a825be64c412edbb334a05dc568745ce885abfc8",
+        "ghcr.io/casys-ai/mcp-calculix@sha256:<digest from release-identity.json>",
         "stdio"
       ]
     }
@@ -130,10 +132,10 @@ apt install gmsh calculix-ccx     # Debian/Ubuntu
 brew install deno gmsh calculix   # macOS/Homebrew
 ```
 
-Run the 0.8.2 JSR entrypoint over HTTP:
+Run the 0.8.3 JSR entrypoint over HTTP:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.2/server --port=3015
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.3/server --port=3015
 ```
 
 From a source tree:
@@ -152,7 +154,7 @@ The JSR export also exposes the tool definitions, strict result schemas, deck
 builders, parsers, and recorded-run store for Deno applications:
 
 ```bash
-deno add jsr:@casys/mcp-calculix@0.8.2
+deno add jsr:@casys/mcp-calculix@0.8.3
 ```
 
 ## Tool surface
@@ -192,7 +194,7 @@ call, so it does not add recorded-run resources or make a physical claim.
 
 Only `calculix_solve_static_recorded` creates durable run evidence. Modal,
 buckling, creep, coupled-thermal, and ordinary static results are closed MCP
-results but do not create recorded-run resources in `0.8.2`.
+results but do not create recorded-run resources in `0.8.3`.
 
 ## Geometry, selections, loads, and units
 
@@ -202,7 +204,7 @@ results but do not create recorded-run resources in `0.8.2`.
   server cannot read a file that exists only on the MCP client's machine; mount
   or stage it where the server can see it.
 - The generated Gmsh program publishes volume `1` as the `PART` physical volume.
-  Treat `0.8.2` as a single-part, single-volume contract. Assemblies and
+  Treat `0.8.3` as a single-part, single-volume contract. Assemblies and
   multi-solid STEP models are not advertised inputs.
 - `mesh_size_mm` has no default. Choose it relative to the smallest relevant
   feature and perform a mesh-convergence study before relying on a result.
@@ -579,7 +581,7 @@ claim `mcp-calculix` provenance. A successful fleet solve is therefore not a
 product static `@3` proof, and an isolated `@3` result must not be relabelled as
 a fleet MCP run.
 
-## Honest limits in 0.8.2
+## Honest limits in 0.8.3
 
 - One advertised STEP part and one volume (`PART = {1}`), one isotropic
   material, and C3D4/C3D10 tetrahedra. No assemblies, shells, beams, composite

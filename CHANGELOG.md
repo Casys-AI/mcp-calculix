@@ -2,7 +2,7 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
-## [Unreleased]
+## [0.8.3] - 2026-08-30
 
 ### Added
 

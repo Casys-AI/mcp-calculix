@@ -8,13 +8,12 @@ import {
 
 const PROTOCOL_VERSION = "2026-07-28";
 const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
-const CURRENT_RELEASE_VERSION = "0.8.2";
-const CURRENT_RELEASE_INDEX_DIGEST =
-  "ea933089d0941dd7c45d7e00a825be64c412edbb334a05dc568745ce885abfc8";
-const CURRENT_DEPLOYMENT_IMAGE =
-  `ghcr.io/casys-ai/mcp-calculix@sha256:${CURRENT_RELEASE_INDEX_DIGEST}`;
+const CURRENT_RELEASE_VERSION = "0.8.3";
 const CURRENT_DISCOVERY_TAG =
   `ghcr.io/casys-ai/mcp-calculix:${CURRENT_RELEASE_VERSION}`;
+const RELEASE_IDENTITY_URL =
+  `https://github.com/Casys-AI/mcp-calculix/releases/download/v${CURRENT_RELEASE_VERSION}/release-identity.json`;
+const DEPLOYMENT_IMAGE_PREFIX = "ghcr.io/casys-ai/mcp-calculix@sha256:";
 const packageMetadata = JSON.parse(
   await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
 ) as { version?: unknown };
@@ -32,7 +31,7 @@ Deno.test(
     assertEquals(
       expected,
       CURRENT_RELEASE_VERSION,
-      "Update the current release deployment digest when deno.json version changes.",
+      "Update the current release documentation guard when deno.json version changes.",
     );
 
     assertReleaseVersion(
@@ -125,10 +124,6 @@ Deno.test(
       "README must describe the package version declared in deno.json.",
     );
     assert(
-      readme.includes(CURRENT_DEPLOYMENT_IMAGE),
-      "README must publish the current qualified deployment image digest.",
-    );
-    assert(
       readme.includes(
         `\`${CURRENT_DISCOVERY_TAG}\` is a mutable discovery tag, not a\n` +
           "qualified deployment identity.",
@@ -136,22 +131,65 @@ Deno.test(
       "README must describe the current release tag as mutable discovery only.",
     );
     assert(
-      readme.includes(`docker pull ${CURRENT_DEPLOYMENT_IMAGE}`),
-      "README Docker pull example must use the qualified index digest.",
+      readme.includes(RELEASE_IDENTITY_URL),
+      "README must link the post-publication release identity artifact.",
     );
     assert(
-      readme.includes(`  ${CURRENT_DEPLOYMENT_IMAGE} http`),
-      "README HTTP Docker run example must use the qualified index digest.",
+      readme.includes(`RELEASE_IDENTITY_URL=${RELEASE_IDENTITY_URL}`) &&
+        readme.includes(
+          `curl -fsSLo release-identity.json "$RELEASE_IDENTITY_URL"`,
+        ) &&
+        readme.includes(`IMAGE_REF="$(jq -er '.image | select(test(`) &&
+        readme.includes(`docker pull "$IMAGE_REF"`),
+      "README must deploy the digest from the immutable release identity.",
     );
     assert(
-      readme.includes(`        \"${CURRENT_DEPLOYMENT_IMAGE}\",`),
-      "README stdio Docker run example must use the qualified index digest.",
+      readme.includes(`  "$IMAGE_REF" http`),
+      "README HTTP Docker run example must use the resolved digest reference.",
     );
     assert(
-      !readme.includes(`docker pull ${CURRENT_DISCOVERY_TAG}`) &&
-        !readme.includes(`  ${CURRENT_DISCOVERY_TAG} http`) &&
-        !readme.includes(`        \"${CURRENT_DISCOVERY_TAG}\",`),
-      "README deployment, pull, and run examples must not use the mutable release tag.",
+      readme.includes(
+        `        \"${DEPLOYMENT_IMAGE_PREFIX}<digest from release-identity.json>\",`,
+      ),
+      "README stdio configuration must require the released digest.",
+    );
+    assert(
+      !new RegExp(
+        "ghcr\\.io/casys-ai/mcp-calculix@sha256:[a-f0-9]{64}",
+      ).test(readme),
+      "The immutable packaged README must not self-reference an image digest produced from its own bytes.",
+    );
+
+    const dockerWorkflow = await Deno.readTextFile(
+      new URL("../.github/workflows/docker.yml", import.meta.url),
+    );
+    assert(
+      dockerWorkflow.includes("id: image") &&
+        dockerWorkflow.includes(
+          "group: docker-${{ github.repository }}-${{ github.ref }}",
+        ) &&
+        dockerWorkflow.includes("cancel-in-progress: false") &&
+        dockerWorkflow.includes("Refuse to overwrite an existing release") &&
+        dockerWorkflow.includes("contents: write") &&
+        dockerWorkflow.includes(
+          "IMAGE_DIGEST: ${{ steps.image.outputs.digest }}",
+        ) &&
+        dockerWorkflow.includes(
+          "Verify the exact JSR release before recording it",
+        ) &&
+        dockerWorkflow.includes('cd "$(mktemp -d)"') &&
+        dockerWorkflow.includes(
+          '"$checkout/scripts/verify-jsr-release.ts"',
+        ) &&
+        dockerWorkflow.includes("rekor.sigstore.dev") &&
+        dockerWorkflow.includes(
+          '[[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]',
+        ) &&
+        dockerWorkflow.includes('commit="$(git rev-parse HEAD)"') &&
+        dockerWorkflow.includes("gh release create") &&
+        dockerWorkflow.includes("--verify-tag") &&
+        dockerWorkflow.includes("release-identity.json"),
+      "Docker publication must attach the exact published index digest to the GitHub release.",
     );
   },
 );
