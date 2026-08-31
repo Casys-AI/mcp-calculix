@@ -12,8 +12,19 @@ concurrency:
 jobs:
   qualify:
     runs-on: ubuntu-latest
+    env:
+      MCP_VIEW_LOCAL_ROOT: ${{ github.workspace }}/.deps/mcp-server/packages/view
+      MCP_VIEW_CONTRACTS_LOCAL_ROOT: ${{ github.workspace }}/.deps/mcp-server/packages/view-contracts
+      MCP_VIEW_COMPONENTS_LOCAL_ROOT: ${{ github.workspace }}/.deps/mcp-server/packages/view-components
     steps:
       - uses: actions/checkout@v5
+      - name: Checkout the exact split mcp-view source
+        uses: actions/checkout@v5
+        with:
+          repository: Casys-AI/mcp-server
+          ref: 6bcb4ae88121e9320d24972ee30e0b098dfb4f47
+          path: .deps/mcp-server
+          persist-credentials: false
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.6
