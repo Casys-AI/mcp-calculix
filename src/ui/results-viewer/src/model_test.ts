@@ -14,6 +14,7 @@ import {
   CALCULIX_RESULT_SCHEMA_IDS,
   CALCULIX_VIEW_APP_MANIFEST,
   CALCULIX_VIEWER_SESSION_SCHEMA,
+  calculixIsolatedStaticResultFingerprint,
   calculixRecordedSessionFingerprint,
   VIEWER_SESSION_APPLY_ACTION,
 } from "../../../viewer-session.ts";
@@ -249,7 +250,7 @@ Deno.test("Digital Thread @3 result remains a distinct recorded authority", asyn
   assertEquals(state.result.authority.runId, "proof-run-19");
   assertEquals(
     state.result.authority.resultArtifact.fingerprint,
-    `sha256:${"d".repeat(64)}`,
+    session.anchor.fingerprint,
   );
   assertEquals(state.result.metrics.maxDisplacement.value, 0.05);
 
@@ -302,6 +303,69 @@ Deno.test("Digital Thread @3 result remains a distinct recorded authority", asyn
     () => displayStateFromViewerSession(changedProvenance),
     TypeError,
     "sessionFingerprint does not match",
+  );
+});
+
+Deno.test("viewer sessions reject re-signed anchor and artifact join substitutions", async () => {
+  const wrongAnchor = structuredClone(await digitalThreadSession());
+  wrongAnchor.anchor.uri = `casys://isolated-output/sha256/${"a".repeat(64)}`;
+  wrongAnchor.anchor.fingerprint = `sha256:${"a".repeat(64)}`;
+  await resignViewerSession(wrongAnchor);
+  await assertRejects(
+    () => displayStateFromViewerSession(wrongAnchor),
+    TypeError,
+    "anchor must identify the exact provider result artifact",
+  );
+
+  const wrongResult = structuredClone(await digitalThreadSession());
+  wrongResult.anchor.uri = `casys://isolated-output/sha256/${"a".repeat(64)}`;
+  wrongResult.anchor.fingerprint = `sha256:${"a".repeat(64)}`;
+  wrongResult.provenance.resultArtifact = {
+    uri: wrongResult.anchor.uri,
+    fingerprint: wrongResult.anchor.fingerprint,
+  };
+  await resignViewerSession(wrongResult);
+  await assertRejects(
+    () => displayStateFromViewerSession(wrongResult),
+    TypeError,
+    "does not match its result artifact fingerprint",
+  );
+
+  const wrongEvidence = structuredClone(await digitalThreadSession());
+  wrongEvidence.provenance.evidenceArtifact.uri =
+    `casys://calculix-isolated-execution-evidence/sha256/${"a".repeat(64)}`;
+  await resignViewerSession(wrongEvidence);
+  await assertRejects(
+    () => displayStateFromViewerSession(wrongEvidence),
+    TypeError,
+    "URI and fingerprint must identify the same bytes",
+  );
+});
+
+Deno.test("fleet recorded sessions join run, request, ledger and result.json", async () => {
+  const session = await fleetViewerSession();
+  const state = await displayStateFromViewerSession(session);
+  assertEquals(state.kind, "result");
+  if (state.kind !== "result") throw new Error("expected result state");
+  assertEquals(state.result.kind, "static-solve-recorded");
+
+  const wrongRequest = structuredClone(session);
+  (wrongRequest.provenance as { requestId: string }).requestId = "request-2";
+  await resignViewerSession(wrongRequest);
+  await assertRejects(
+    () => displayStateFromViewerSession(wrongRequest),
+    TypeError,
+    "does not match its provenance run and request identities",
+  );
+
+  const wrongResult = structuredClone(session);
+  (wrongResult.projection.result.metrics.maxVonMises as { value: number })
+    .value = 27.1;
+  await resignViewerSession(wrongResult);
+  await assertRejects(
+    () => displayStateFromViewerSession(wrongResult),
+    TypeError,
+    "does not match its result.json fingerprint",
   );
 });
 
@@ -487,13 +551,7 @@ Deno.test("default surface is one compact static-result card", () => {
   const catalog = advertisedComponentCatalog(CALCULIX_COMPONENT_REGISTRY);
   assertEquals(
     Object.keys(catalog.components).toSorted(),
-    [
-      CALCULIX_COMPONENT_KEYS.constraints,
-      CALCULIX_COMPONENT_KEYS.displacementDetails,
-      CALCULIX_COMPONENT_KEYS.meshSummary,
-      CALCULIX_COMPONENT_KEYS.solveMetrics,
-      CALCULIX_COMPONENT_KEYS.staticResult,
-    ].toSorted(),
+    [CALCULIX_COMPONENT_KEYS.staticResult],
   );
   assertEquals(catalog.defaultSurface, CALCULIX_RESULTS_SURFACE);
   assertEquals(CALCULIX_RESULTS_SURFACE.layout, {
@@ -576,6 +634,8 @@ Deno.test("compact default source does not import invented verdict or bound widg
   );
   assertEquals(source.includes("LimitGauge"), false);
   assertEquals(source.includes("ElementVerdict"), false);
+  assertEquals(source.includes("ArtifactRow"), false);
+  assertEquals(source.includes("PathBar"), false);
 });
 
 Deno.test({
@@ -612,19 +672,28 @@ Deno.test({
         );
         assertStringIncludes(
           root.textContent ?? "",
-          "Digital Thread · documentary result",
+          "Digital Thread · documentary projection",
         );
         assertStringIncludes(root.textContent ?? "", "Documentary");
-        assertStringIncludes(
-          root.textContent ?? "",
-          "verify.run-fea-static-proof@3",
+        assertEquals(
+          card?.getAttribute("data-semantic-id"),
+          (await digitalThreadSession()).anchor.id,
         );
-        assertStringIncludes(
-          root.textContent ?? "",
-          "thread://project-1/artifacts/bracket.step",
+        assertEquals(
+          card?.getAttribute("data-basis-fingerprint"),
+          (await digitalThreadSession()).anchor.fingerprint.slice(
+            "sha256:".length,
+          ),
         );
         assertEquals(root.textContent?.includes("CalculiX run ID"), false);
         assertEquals(root.textContent?.includes("Mesh summary"), false);
+        assertEquals(root.textContent?.includes("STEP resource"), false);
+        assertEquals(root.querySelector(".mcp-view-artifact-row"), null);
+        assertEquals(
+          root.querySelectorAll(".calculix-result-readings .mcp-view-metric")
+            .length,
+          2,
+        );
         assertEquals(root.querySelectorAll('[data-tone="success"]').length, 0);
         assertNoInventedVerdict(root);
 
@@ -646,8 +715,8 @@ Deno.test({
         null,
       );
       assertEquals(root.querySelector(".mcp-view-limit-gauge"), null);
-      assertStringIncludes(root.textContent ?? "", "STEP source");
-      assertStringIncludes(root.textContent ?? "", "/exports/bracket.step");
+      assertEquals(root.textContent?.includes("STEP source"), false);
+      assertEquals(root.textContent?.includes("/exports/bracket.step"), false);
       assertStringIncludes(root.textContent ?? "", "Maximum displacement");
       assertStringIncludes(root.textContent ?? "", "mm");
       assertStringIncludes(root.textContent ?? "", "MPa");
@@ -657,7 +726,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "recorded static-solve card uses ArtifactRow only for the STEP URI",
+  name:
+    "recorded static-solve card stays one result object without nested STEP",
   permissions: { read: true, env: true, run: true },
   async fn() {
     const fixture = await recordedFixture();
@@ -668,21 +738,12 @@ Deno.test({
       },
       {},
       (root) => {
-        assertEquals(root.querySelectorAll(".mcp-view-artifact-row").length, 1);
+        assertEquals(root.querySelector(".mcp-view-artifact-row"), null);
         assertEquals(
-          root.querySelectorAll("article.mcp-view-artifact-row").length,
-          1,
+          root.textContent?.includes(`${RUN_URI}/input.step`),
+          false,
         );
-        assertEquals(root.querySelector("button.mcp-view-artifact-row"), null);
-        assertEquals(
-          root.querySelector(".mcp-view-artifact-row-verification"),
-          null,
-        );
-        assertStringIncludes(
-          root.textContent ?? "",
-          `${RUN_URI}/input.step`,
-        );
-        assertStringIncludes(root.textContent ?? "", "CalculiX run ID");
+        assertStringIncludes(root.textContent ?? "", "Result artifact");
         assertEquals(
           root.querySelector("[data-element-slot=verdict]"),
           null,
@@ -690,67 +751,6 @@ Deno.test({
         assertNoInventedVerdict(root);
       },
     );
-  },
-});
-
-Deno.test({
-  name: "host-selected surface still mounts the four detail components",
-  permissions: { read: true, env: true, run: true },
-  async fn() {
-    await withMountedSurface(result, {
-      [CASYS_SURFACE_CONTEXT_KEY]: {
-        instanceId: "whiteboard",
-        status: "ready",
-        source: "requested",
-        surface: {
-          layout: { type: "grid", columns: 2, gap: "md" },
-          components: [
-            {
-              id: "solve-metrics",
-              component: CALCULIX_COMPONENT_KEYS.solveMetrics,
-            },
-            {
-              id: "mesh-summary",
-              component: CALCULIX_COMPONENT_KEYS.meshSummary,
-            },
-            {
-              id: "constraints",
-              component: CALCULIX_COMPONENT_KEYS.constraints,
-            },
-            {
-              id: "displacement-details",
-              component: CALCULIX_COMPONENT_KEYS.displacementDetails,
-            },
-          ],
-        },
-      },
-    }, (root) => {
-      assertEquals(root.querySelectorAll("[data-component]").length, 4);
-      assertEquals(
-        [...root.querySelectorAll("[data-component]")].map((node) =>
-          node.getAttribute("data-component")
-        ),
-        [
-          CALCULIX_COMPONENT_KEYS.solveMetrics,
-          CALCULIX_COMPONENT_KEYS.meshSummary,
-          CALCULIX_COMPONENT_KEYS.constraints,
-          CALCULIX_COMPONENT_KEYS.displacementDetails,
-        ],
-      );
-      assertEquals(root.querySelector(".mcp-view-semantic-element"), null);
-      assertStringIncludes(root.textContent ?? "", "Mesh summary");
-      assertStringIncludes(root.textContent ?? "", "Boundary conditions");
-      assertStringIncludes(root.textContent ?? "", "Extrema details");
-      assertEquals(root.querySelectorAll(".mcp-view-stack").length, 2);
-      assertEquals(
-        root.querySelector('[aria-label="Fixed selections"]')?.getAttribute(
-          "role",
-        ),
-        "group",
-      );
-      assertEquals(root.querySelector(".calculix-selection-counts"), null);
-      assertEquals(root.querySelector(".calculix-fixed-selections"), null);
-    });
   },
 });
 
@@ -817,7 +817,7 @@ async function digitalThreadResult(): Promise<StaticResultsViewData> {
 }
 
 async function recordedFixture() {
-  const resultText = JSON.stringify(recordedDocument);
+  const resultText = `${canonicalTestJson(recordedDocument)}\n`;
   const resultSha256 = await sha256Hex(resultText);
   const specifications = [
     ["input.step", "model/step"],
@@ -912,6 +912,10 @@ async function digitalThreadSession() {
       },
     },
   } as const;
+  const resultFingerprint = await calculixIsolatedStaticResultFingerprint(
+    projection.result,
+  );
+  const resultDigest = resultFingerprint.slice("sha256:".length);
   const session = {
     schemaVersion: CALCULIX_VIEWER_SESSION_SCHEMA,
     kind: "calculix.static-proof",
@@ -922,23 +926,30 @@ async function digitalThreadSession() {
       thread: { id: "thread-1", revision: 42 },
       sessionFingerprint: `sha256:${"0".repeat(64)}`,
     },
-    anchor: { kind: "proof-run", id: "proof-run-19" },
+    anchor: {
+      kind: "artifact",
+      id: `isolated-result-${resultDigest}`,
+      uri: `casys://isolated-output/sha256/${resultDigest}`,
+      fingerprint: resultFingerprint,
+    },
     provenance: {
       kind: "digital-thread-operation",
       operation: "verify.run-fea-static-proof@3",
       runId: "proof-run-19",
       inputArtifact: {
-        uri: "thread://project-1/artifacts/bracket.step",
+        uri: `casys://isolated-output/sha256/${STEP_SHA256}`,
         mediaType: "model/step",
         fingerprint: `sha256:${STEP_SHA256}`,
         bytes: 4256,
       },
       resultArtifact: {
-        uri: "thread://project-1/runs/proof-run-19/result.json",
-        fingerprint: `sha256:${"d".repeat(64)}`,
+        uri: `casys://isolated-output/sha256/${resultDigest}`,
+        fingerprint: resultFingerprint,
       },
       evidenceArtifact: {
-        uri: "thread://project-1/runs/proof-run-19/evidence.json",
+        uri: `casys://calculix-isolated-execution-evidence/sha256/${
+          "e".repeat(64)
+        }`,
         fingerprint: `sha256:${"e".repeat(64)}`,
       },
     },
@@ -948,6 +959,71 @@ async function digitalThreadSession() {
     session,
   );
   return session;
+}
+
+async function fleetViewerSession() {
+  const fixture = await recordedFixture();
+  const resultArtifact = fixture.lookup.run.artifacts.find((artifact) =>
+    artifact.name === "result.json"
+  );
+  if (!resultArtifact) throw new Error("fixture result.json is missing");
+  const artifactIdentity = {
+    uri: resultArtifact.uri,
+    fingerprint: `sha256:${resultArtifact.sha256}`,
+  };
+  const session = {
+    schemaVersion: CALCULIX_VIEWER_SESSION_SCHEMA,
+    kind: "calculix.static-proof",
+    basis: {
+      projectId: "project-1",
+      projectRevision: 19,
+      subjectId: "part-bracket",
+      thread: { id: "thread-1", revision: 42 },
+      sessionFingerprint: `sha256:${"0".repeat(64)}`,
+    },
+    anchor: {
+      kind: "artifact",
+      id: resultArtifact.name,
+      ...artifactIdentity,
+    },
+    provenance: {
+      kind: "mcp-calculix-recorded-run",
+      server: { package: "@casys/mcp-calculix", version: "0.8.4" },
+      tool: { name: "calculix_solve_static_recorded", version: "1.0" },
+      runId: fixture.lookup.run.runId,
+      requestId: fixture.lookup.run.requestId,
+      resultArtifact: artifactIdentity,
+    },
+    projection: {
+      status: "available",
+      result: { ...recordedDocument, run: fixture.lookup.run },
+    },
+  };
+  await resignViewerSession(session);
+  return session;
+}
+
+async function resignViewerSession(
+  session: { basis: { sessionFingerprint: string } } & Record<string, unknown>,
+): Promise<void> {
+  session.basis.sessionFingerprint = await calculixRecordedSessionFingerprint(
+    session,
+  );
+}
+
+function canonicalTestJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalTestJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${
+      Object.keys(record).toSorted().map((key) =>
+        `${JSON.stringify(key)}:${canonicalTestJson(record[key])}`
+      ).join(",")
+    }}`;
+  }
+  return JSON.stringify(value);
 }
 
 async function sha256Hex(text: string): Promise<string> {

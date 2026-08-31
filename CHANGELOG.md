@@ -2,6 +2,24 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [0.8.4] - Unreleased
+
+### Added
+
+- Ships and serves the exact MCP View App manifest for the CalculiX whole-view
+  results resource, including `viewer.session.apply` and the recorded static
+  proof session schema.
+- Recorded viewer sessions now join their opaque host anchor to the exact
+  provider result artifact. Available fleet and Digital Thread projections are
+  also rehashed against their recorded result identity.
+
+### Changed
+
+- The default results viewer is one responsive MCP View v2 semantic result card
+  containing only the result identity, two primary extrema readings, and compact
+  provenance. Mesh, boundary-condition, STEP, and detailed-extrema objects are
+  no longer rendered as a bundled dashboard catalog.
+
 ## [0.8.3] - 2026-08-30
 
 ### Added

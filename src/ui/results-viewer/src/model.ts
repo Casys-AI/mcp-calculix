@@ -3,6 +3,8 @@ import {
   type CalculixIsolatedStaticResult,
   type CalculixRecordedRun,
   type CalculixRecordedStaticResult,
+  type CalculixViewerSessionAnchor,
+  type CalculixViewerSessionBasis,
   type CalculixViewerSessionProvenance,
   parseCalculixRecordedResultDocument,
   parseCalculixRecordedRun,
@@ -36,6 +38,10 @@ export interface DigitalThreadStaticProofViewResult
     CalculixViewerSessionProvenance,
     { kind: "digital-thread-operation" }
   >;
+  readonly viewerSession: {
+    readonly anchor: CalculixViewerSessionAnchor;
+    readonly basis: CalculixViewerSessionBasis;
+  };
   readonly inputArtifact: {
     readonly uri: string;
     readonly mimeType: "model/step";
@@ -414,6 +420,8 @@ export async function displayStateFromViewerSession(
     result: isolatedProofView(
       session.projection.result,
       session.provenance,
+      session.anchor,
+      session.basis,
     ),
   };
 }
@@ -456,11 +464,14 @@ function isolatedProofView(
     CalculixViewerSessionProvenance,
     { kind: "digital-thread-operation" }
   >,
+  anchor: CalculixViewerSessionAnchor,
+  basis: CalculixViewerSessionBasis,
 ): DigitalThreadStaticProofViewResult {
   return {
     schemaVersion: "calculix-isolated-static-result/1.0",
     kind: "digital-thread-static-proof",
     authority: provenance,
+    viewerSession: { anchor, basis },
     inputArtifact: {
       uri: provenance.inputArtifact.uri,
       mimeType: "model/step",

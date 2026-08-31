@@ -89,10 +89,10 @@ Deno.test("built CalculiX viewer contains its App-owned whole view", async () =>
   assert(html.includes("io.casys.mcp.surface/v1"));
   assert(html.includes("io.casys.mcp.view-components/v1"));
   assert(html.includes("calculix.static-result"));
-  assert(html.includes("calculix.solve-metrics"));
-  assert(html.includes("calculix.mesh-summary"));
-  assert(html.includes("calculix.constraints"));
-  assert(html.includes("calculix.displacement-details"));
+  assertEquals(html.includes("calculix.solve-metrics"), false);
+  assertEquals(html.includes("calculix.mesh-summary"), false);
+  assertEquals(html.includes("calculix.constraints"), false);
+  assertEquals(html.includes("calculix.displacement-details"), false);
   assert(html.includes("mcp-view-semantic-element"));
   assert(html.includes("viewer.session.apply"));
   assert(html.includes("io.casys.mcp-calculix.results"));
@@ -104,11 +104,9 @@ Deno.test("built CalculiX viewer contains its App-owned whole view", async () =>
   );
   assert(html.includes("verify.run-fea-static-proof"));
   assert(html.includes("digital-thread-static-proof"));
-  assert(html.includes("documentary result"));
+  assert(html.includes("documentary projection"));
   assertEquals(html.includes("Recorded proof"), false);
-  assert(html.includes("mcp-view-card"));
   assert(html.includes("mcp-view-metrics"));
-  assert(html.includes("mcp-view-stack"));
   assert(html.includes("mcp-view-state-busy"));
   assertEquals(html.includes("calculix-selection-counts"), false);
   assertEquals(html.includes("calculix-fixed-selections"), false);

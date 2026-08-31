@@ -14,12 +14,11 @@ STEP part -> private SHA-256 snapshot -> Gmsh C3D4/C3D10 mesh
           -> code-generated CalculiX deck -> parsed physical observations
 ```
 
-Version `0.8.3` provides native, era-aware stdio and supports linear static,
-modal, linear buckling, Norton-law creep, and steady-state coupled
-temperature-displacement analyses. It also provides an identity-bound recorded
-variant of the static solve with exact MCP evidence resources and read-only
-recovery. The `calculix_mesh_preflight` capability checks mesh bounds and named
-selections before an agent commits to solve physics.
+Source version `0.8.4` is unreleased. It keeps the bounded analysis surface of
+the attested `0.8.3` release and adds the serialized MCP View App contract,
+strict recorded-viewer joins, and the one-component MCP View v2 result surface.
+The latest published image and JSR identity remain `0.8.3`; the source version
+must not be treated as published until a separate release completes.
 
 This is a constrained analysis service, not a generic CalculiX shell. Callers
 provide STEP geometry and reviewed physical values; they cannot submit an
@@ -150,8 +149,8 @@ deno task serve
 
 Viewer source builds are intentionally local and fail closed. All three roots
 must be explicit split packages with matching package identities; there is no
-fallback to a published monolithic `mcp-view` release. Runtime consumers use
-the already-versioned single-file viewer resource and do not need these source
+fallback to a published monolithic `mcp-view` release. Runtime consumers use the
+already-versioned single-file viewer resource and do not need these source
 packages.
 
 The native server binds `127.0.0.1` by default. `--port` and `--hostname`
@@ -497,24 +496,22 @@ actually passed to Gmsh. It is removed when the call ends. `sourcePath` is only
 the caller-supplied location. Use `inputArtifact.sha256`, not either mutable or
 ephemeral path, as the input identity.
 
-The server publishes the MCP App at `ui://mcp-calculix/results-viewer`.
-`calculix_solve_static`, `calculix_solve_static_recorded`, and the read-only
-`calculix_run_get` link it in their tool metadata. The viewer parser accepts
-both ordinary and recorded-static `2.0` results. For a completed run lookup, the
-App reads the exact recorded `result.json` resource, checks its URI, media type,
-byte count and SHA-256 against the complete run ledger, and only then projects
-the observations. It never calls a solve tool. Non-terminal recovery states stay
+The server publishes the MCP App at `ui://mcp-calculix/results-viewer`. Its
+exact serialized contract is discoverable and readable at
+`ui://mcp-calculix/app-manifest` as `application/json`. `calculix_solve_static`,
+`calculix_solve_static_recorded`, and the read-only `calculix_run_get` link it
+in their tool metadata. The viewer parser accepts both ordinary and
+recorded-static `2.0` results. For a completed run lookup, the App reads the
+exact recorded `result.json` resource, checks its URI, media type, byte count
+and SHA-256 against the complete run ledger, and only then projects the
+observations. It never calls a solve tool. Non-terminal recovery states stay
 visibly `unresolved` or `unavailable` rather than being replaced with inferred
-data. The viewer displays constraints, mesh counts, extrema, displacement
-vector, and the relevant node/element IDs without classifying the observations.
-Its composable catalog is `io.casys.mcp.view-components/v1`:
-
-| Component                       | Content                                          |
-| ------------------------------- | ------------------------------------------------ |
-| `calculix.solve-metrics`        | Maximum displacement and von Mises stress        |
-| `calculix.mesh-summary`         | Node, element, and named-selection counts        |
-| `calculix.constraints`          | Fixed selections and load vectors                |
-| `calculix.displacement-details` | Displacement vector and extrema node/element IDs |
+data. The default viewer is exactly one `calculix.static-result` semantic
+component. It shows the result identity, maximum displacement, maximum von Mises
+stress, their node/element IDs, and exact result provenance. Mesh, STEP,
+constraint, and detailed extrema objects are not nested as dashboard panels. The
+component renders one column in a narrow whiteboard window and only places the
+two primary readings side by side when its container is at least `30rem`.
 
 ### Recorded static runs
 
@@ -600,21 +597,25 @@ through the read-only `viewer.session.apply` action. Its provenance union keeps
 an exact `verify.run-fea-static-proof@3` projection distinct from a recorded
 `calculix_solve_static_recorded` run, and its projection status remains
 `available`, `unresolved`, or `unavailable` without fallback inference. The App
-recomputes `basis.sessionFingerprint` over the canonical subdocument
+requires the opaque host anchor to repeat the exact result artifact URI and
+fingerprint. Available isolated results are rehashed as canonical JSON; fleet
+results join their run/request identities and canonical `result.json` bytes to
+the recorded ledger before rendering. The App recomputes
+`basis.sessionFingerprint` over the canonical subdocument
 `{schemaVersion, kind, basis, anchor, provenance, projection}`. Inside that
 subdocument, `basis` contains `projectId`, `projectRevision`, `subjectId`, and
 `thread`; only the self-referential `sessionFingerprint` is omitted. Canonical
 JSON uses recursively sorted object keys and finite numbers, and rejects sparse
 or adorned arrays. Recorded Thread artifact fingerprints keep their original
-persisted-artifact meaning. The exported `CALCULIX_VIEW_APP_MANIFEST` declares
-one App-owned whole-view resource, its result schemas, accepted action, and
-session schema; it does not advertise a host-selectable component catalog.
-`deno task build:ui`, the UI part of `deno task test`, and the release bundle
-gate require the three explicit local package roots shown above. They validate
-the package names and entry points before loading code, without changing any
-released dependency version.
+persisted-artifact meaning. The exported `CALCULIX_VIEW_APP_MANIFEST` and the
+shipped `src/ui/app-manifest.json` declare one App-owned whole-view resource,
+its result schemas, accepted action, and session schema; it does not advertise a
+host-selectable component catalog. `deno task build:ui`, the UI part of
+`deno task test`, and the release bundle gate require the three explicit local
+package roots shown above. They validate the package names and entry points
+before loading code, without changing any released dependency version.
 
-## Honest limits in 0.8.3
+## Honest limits
 
 - One advertised STEP part and one volume (`PART = {1}`), one isotropic
   material, and C3D4/C3D10 tetrahedra. No assemblies, shells, beams, composite

@@ -1,6 +1,6 @@
 {
   "name": "@casys/mcp-calculix",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": ["jsr:@casys/mcp-server"]
@@ -29,6 +29,7 @@
       "src/**/*.tsx",
       "src/**/*.css",
       "src/**/*.html",
+      "src/**/*.json",
       "src/ui/dist/**/*.html",
       "README.md",
       "LICENSE"

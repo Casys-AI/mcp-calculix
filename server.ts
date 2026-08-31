@@ -10,8 +10,13 @@ import { CalculixToolsClient } from "./src/client.ts";
 import { mapCalculixToolError } from "./src/api/budgets.ts";
 import { CalculixRunStore, type RecordedStaticRun } from "./src/runs.ts";
 import type { CalculixToolHandler } from "./src/tools/types.ts";
+import {
+  CALCULIX_VIEW_APP_MANIFEST,
+  CALCULIX_VIEW_APP_MANIFEST_JSON,
+  CALCULIX_VIEW_APP_MANIFEST_URI,
+} from "./src/viewer-session.ts";
 
-const VERSION = "0.8.3";
+const VERSION = "0.8.4";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 
@@ -111,7 +116,36 @@ export function createCalculixServer(
   const hasResultsViewer = viewerRegistration.registered.includes(
     "results-viewer",
   );
+  if (hasResultsViewer) registerCalculixViewAppManifest(app);
   return { app, hasResultsViewer, runStore, toolsClient };
+}
+
+/** Publish the exact serialized App contract next to its HTML resource. */
+export function registerCalculixViewAppManifest(app: McpApp): void {
+  const bytes = new TextEncoder().encode(CALCULIX_VIEW_APP_MANIFEST_JSON);
+  app.registerResource(
+    {
+      uri: CALCULIX_VIEW_APP_MANIFEST_URI,
+      name: "CalculiX View App manifest",
+      description:
+        `Exact ${CALCULIX_VIEW_APP_MANIFEST.app.id}@${CALCULIX_VIEW_APP_MANIFEST.app.version} ` +
+        "whole-view and recorded-session contract.",
+      mimeType: "application/json",
+      size: bytes.byteLength,
+    },
+    (requested) => {
+      if (requested.toString() !== CALCULIX_VIEW_APP_MANIFEST_URI) {
+        throw new Error(
+          "Requested URI does not match the CalculiX App manifest.",
+        );
+      }
+      return {
+        uri: CALCULIX_VIEW_APP_MANIFEST_URI,
+        mimeType: "application/json",
+        text: CALCULIX_VIEW_APP_MANIFEST_JSON,
+      };
+    },
+  );
 }
 
 function registerRecordedRunResources(

@@ -6,8 +6,14 @@
  * translate the isolated product operation into a fleet mcp-calculix run.
  */
 
+import serializedViewAppManifest from "./ui/app-manifest.json" with {
+  type: "json",
+};
+
 export const CALCULIX_RESULTS_VIEWER_URI =
   "ui://mcp-calculix/results-viewer" as const;
+export const CALCULIX_VIEW_APP_MANIFEST_URI =
+  "ui://mcp-calculix/app-manifest" as const;
 export const CALCULIX_VIEWER_SESSION_SCHEMA =
   "io.casys.mcp-calculix.recorded-static-proof-session/1.0" as const;
 export const CALCULIX_VIEWER_SESSION_KIND = "calculix.static-proof" as const;
@@ -26,7 +32,7 @@ export interface CalculixViewAppManifest {
   readonly app: {
     readonly id: "io.casys.mcp-calculix.results";
     readonly title: "CalculiX Static Results";
-    readonly version: "0.8.3";
+    readonly version: "0.8.4";
   };
   readonly resources: readonly [{
     readonly uri: typeof CALCULIX_RESULTS_VIEWER_URI;
@@ -37,25 +43,134 @@ export interface CalculixViewAppManifest {
   }];
 }
 
-/**
- * Local declaration compatible with `@casys/mcp-view-contracts`.
- * It remains local until that shared contracts entry point is released.
- */
-export const CALCULIX_VIEW_APP_MANIFEST: CalculixViewAppManifest = {
-  schemaVersion: VIEW_APP_MANIFEST_SCHEMA,
-  app: {
-    id: "io.casys.mcp-calculix.results",
-    title: "CalculiX Static Results",
-    version: "0.8.3",
-  },
-  resources: [{
-    uri: CALCULIX_RESULTS_VIEWER_URI,
-    ownership: "whole-view",
-    resultSchemas: Object.values(CALCULIX_RESULT_SCHEMA_IDS),
-    acceptedActions: [VIEWER_SESSION_APPLY_ACTION],
-    sessionSchemas: [CALCULIX_VIEWER_SESSION_SCHEMA],
-  }],
-} as const;
+/** Exact package artifact served by the provider for host-side App discovery. */
+export const CALCULIX_VIEW_APP_MANIFEST = parseCalculixViewAppManifest(
+  serializedViewAppManifest,
+);
+
+/** Canonical bytes exposed by the manifest MCP resource. */
+export const CALCULIX_VIEW_APP_MANIFEST_JSON = `${
+  JSON.stringify(CALCULIX_VIEW_APP_MANIFEST)
+}\n`;
+
+function parseCalculixViewAppManifest(
+  value: unknown,
+): CalculixViewAppManifest {
+  const root = exactRecord(
+    value,
+    ["schemaVersion", "app", "resources"],
+    "CalculiX View App manifest",
+  );
+  literal(
+    root.schemaVersion,
+    VIEW_APP_MANIFEST_SCHEMA,
+    "CalculiX View App manifest.schemaVersion",
+  );
+  const app = exactRecord(
+    root.app,
+    ["id", "title", "version"],
+    "CalculiX View App manifest.app",
+  );
+  literal(
+    app.id,
+    "io.casys.mcp-calculix.results",
+    "CalculiX View App manifest.app.id",
+  );
+  literal(
+    app.title,
+    "CalculiX Static Results",
+    "CalculiX View App manifest.app.title",
+  );
+  literal(
+    app.version,
+    "0.8.4",
+    "CalculiX View App manifest.app.version",
+  );
+  const resources = denseArray(
+    root.resources,
+    "CalculiX View App manifest.resources",
+  );
+  if (resources.length !== 1) {
+    throw new TypeError(
+      "CalculiX View App manifest.resources must contain exactly one whole view.",
+    );
+  }
+  const resource = exactRecord(
+    resources[0],
+    [
+      "uri",
+      "ownership",
+      "resultSchemas",
+      "acceptedActions",
+      "sessionSchemas",
+    ],
+    "CalculiX View App manifest.resources[0]",
+  );
+  literal(
+    resource.uri,
+    CALCULIX_RESULTS_VIEWER_URI,
+    "CalculiX View App manifest.resources[0].uri",
+  );
+  literal(
+    resource.ownership,
+    "whole-view",
+    "CalculiX View App manifest.resources[0].ownership",
+  );
+  const expectedResultSchemas = Object.values(CALCULIX_RESULT_SCHEMA_IDS);
+  const resultSchemas = denseArray(
+    resource.resultSchemas,
+    "CalculiX View App manifest.resources[0].resultSchemas",
+  );
+  if (
+    resultSchemas.length !== expectedResultSchemas.length ||
+    resultSchemas.some((schema, index) =>
+      schema !== expectedResultSchemas[index]
+    )
+  ) {
+    throw new TypeError(
+      "CalculiX View App manifest result schemas do not match the provider contracts.",
+    );
+  }
+  const acceptedActions = denseArray(
+    resource.acceptedActions,
+    "CalculiX View App manifest.resources[0].acceptedActions",
+  );
+  if (
+    acceptedActions.length !== 1 ||
+    acceptedActions[0] !== VIEWER_SESSION_APPLY_ACTION
+  ) {
+    throw new TypeError(
+      "CalculiX View App manifest must accept viewer.session.apply exactly.",
+    );
+  }
+  const sessionSchemas = denseArray(
+    resource.sessionSchemas,
+    "CalculiX View App manifest.resources[0].sessionSchemas",
+  );
+  if (
+    sessionSchemas.length !== 1 ||
+    sessionSchemas[0] !== CALCULIX_VIEWER_SESSION_SCHEMA
+  ) {
+    throw new TypeError(
+      "CalculiX View App manifest must bind the recorded static proof session schema exactly.",
+    );
+  }
+  return {
+    schemaVersion: VIEW_APP_MANIFEST_SCHEMA,
+    app: {
+      id: "io.casys.mcp-calculix.results",
+      title: "CalculiX Static Results",
+      version: "0.8.4",
+    },
+    resources: [{
+      uri: CALCULIX_RESULTS_VIEWER_URI,
+      ownership: "whole-view",
+      resultSchemas: expectedResultSchemas,
+      acceptedActions: [VIEWER_SESSION_APPLY_ACTION],
+      sessionSchemas: [CALCULIX_VIEWER_SESSION_SCHEMA],
+    }],
+  };
+}
 
 export interface CalculixRecordedArtifact {
   readonly name: RecordedArtifactName;
@@ -173,6 +288,9 @@ export interface CalculixViewerSessionBasis {
 export interface CalculixViewerSessionAnchor {
   readonly kind: string;
   readonly id: string;
+  /** Opaque host anchor joined to the provider-owned result artifact identity. */
+  readonly uri: string;
+  readonly fingerprint: string;
 }
 
 export type CalculixViewerSessionProvenance =
@@ -185,6 +303,12 @@ export type CalculixViewerSessionProvenance =
     readonly tool: {
       readonly name: "calculix_solve_static_recorded";
       readonly version: "1.0";
+    };
+    readonly runId: string;
+    readonly requestId: string;
+    readonly resultArtifact: {
+      readonly uri: string;
+      readonly fingerprint: string;
     };
   }
   | {
@@ -475,6 +599,7 @@ export async function parseCalculixViewerSession(
       "viewer session.basis.sessionFingerprint does not match the recorded session.",
     );
   }
+  await assertCalculixViewerSessionJoins(session);
   return session;
 }
 
@@ -532,12 +657,17 @@ function parseCalculixViewerSessionStructure(
   };
   const anchorValue = exactRecord(
     root.anchor,
-    ["kind", "id"],
+    ["kind", "id", "uri", "fingerprint"],
     "viewer session.anchor",
   );
   const anchor = {
     kind: nonEmpty(anchorValue.kind, "viewer session.anchor.kind"),
     id: nonEmpty(anchorValue.id, "viewer session.anchor.id"),
+    uri: nonEmpty(anchorValue.uri, "viewer session.anchor.uri"),
+    fingerprint: fingerprint(
+      anchorValue.fingerprint,
+      "viewer session.anchor.fingerprint",
+    ),
   };
   const provenance = viewerProvenance(root.provenance);
   const projectionValue = record(root.projection, "viewer session.projection");
@@ -670,12 +800,182 @@ export function assertRecordedResultMatchesRun(
   }
 }
 
+/** SHA-256 identity of the exact canonical isolated result document bytes. */
+export async function calculixIsolatedStaticResultFingerprint(
+  value: unknown,
+): Promise<string> {
+  return await canonicalJsonFingerprint(
+    parseCalculixIsolatedStaticResult(value),
+    false,
+    "isolated result artifact",
+  );
+}
+
+/** SHA-256 identity of provider-recorded canonical `result.json` bytes. */
+export async function calculixRecordedResultDocumentFingerprint(
+  value: unknown,
+): Promise<string> {
+  return await canonicalJsonFingerprint(
+    parseCalculixRecordedResultDocument(value),
+    true,
+    "recorded result.json artifact",
+  );
+}
+
+async function assertCalculixViewerSessionJoins(
+  session: CalculixViewerSession,
+): Promise<void> {
+  const resultArtifact = session.provenance.resultArtifact;
+  if (
+    session.anchor.uri !== resultArtifact.uri ||
+    session.anchor.fingerprint !== resultArtifact.fingerprint
+  ) {
+    throw new TypeError(
+      "viewer session.anchor must identify the exact provider result artifact.",
+    );
+  }
+
+  if (session.provenance.kind === "digital-thread-operation") {
+    assertDigestAddress(
+      session.provenance.inputArtifact.uri,
+      session.provenance.inputArtifact.fingerprint,
+      /^casys:\/\/isolated-output\/sha256\/([a-f0-9]{64})$/,
+      "viewer session.provenance.inputArtifact",
+    );
+    assertDigestAddress(
+      resultArtifact.uri,
+      resultArtifact.fingerprint,
+      /^casys:\/\/isolated-output\/sha256\/([a-f0-9]{64})$/,
+      "viewer session.provenance.resultArtifact",
+    );
+    assertDigestAddress(
+      session.provenance.evidenceArtifact.uri,
+      session.provenance.evidenceArtifact.fingerprint,
+      /^casys:\/\/calculix-isolated-execution-evidence\/sha256\/([a-f0-9]{64})$/,
+      "viewer session.provenance.evidenceArtifact",
+    );
+    if (session.projection.status !== "available") return;
+    const result = session.projection.result;
+    if (result.schemaVersion !== "calculix-isolated-static-result/1.0") {
+      throw new TypeError(
+        "viewer session Digital Thread provenance requires an isolated result.",
+      );
+    }
+    const resultFingerprint = await canonicalJsonFingerprint(
+      result,
+      false,
+      "viewer session isolated result artifact",
+    );
+    if (resultFingerprint !== resultArtifact.fingerprint) {
+      throw new TypeError(
+        "viewer session isolated result does not match its result artifact fingerprint.",
+      );
+    }
+    return;
+  }
+
+  const expectedResultUri = recordedArtifactUri(
+    session.provenance.runId,
+    "result.json",
+  );
+  if (resultArtifact.uri !== expectedResultUri) {
+    throw new TypeError(
+      "viewer session recorded result artifact does not match its run identity.",
+    );
+  }
+  if (session.projection.status !== "available") return;
+  const result = session.projection.result;
+  if (result.schemaVersion !== "2.0") {
+    throw new TypeError(
+      "viewer session recorded-run provenance requires a recorded static result.",
+    );
+  }
+  if (
+    result.run.runId !== session.provenance.runId ||
+    result.run.requestId !== session.provenance.requestId
+  ) {
+    throw new TypeError(
+      "viewer session recorded result does not match its provenance run and request identities.",
+    );
+  }
+  const ledgerArtifact = result.run.artifacts.find((artifact) =>
+    artifact.name === "result.json"
+  );
+  if (
+    !ledgerArtifact ||
+    ledgerArtifact.uri !== resultArtifact.uri ||
+    `sha256:${ledgerArtifact.sha256}` !== resultArtifact.fingerprint
+  ) {
+    throw new TypeError(
+      "viewer session recorded result artifact does not match its run ledger.",
+    );
+  }
+  const document = {
+    schemaVersion: result.schemaVersion,
+    kind: result.kind,
+    inputArtifact: result.inputArtifact,
+    mesh: result.mesh,
+    constraints: result.constraints,
+    metrics: result.metrics,
+  };
+  const documentFingerprint = await canonicalJsonFingerprint(
+    document,
+    true,
+    "viewer session recorded result.json artifact",
+  );
+  if (documentFingerprint !== resultArtifact.fingerprint) {
+    throw new TypeError(
+      "viewer session recorded result does not match its result.json fingerprint.",
+    );
+  }
+}
+
+function assertDigestAddress(
+  uri: string,
+  artifactFingerprint: string,
+  pattern: RegExp,
+  name: string,
+): void {
+  const match = pattern.exec(uri);
+  if (!match || artifactFingerprint !== `sha256:${match[1]}`) {
+    throw new TypeError(
+      `${name} URI and fingerprint must identify the same bytes.`,
+    );
+  }
+}
+
+async function canonicalJsonFingerprint(
+  value: unknown,
+  trailingNewline: boolean,
+  name: string,
+): Promise<string> {
+  const json = canonicalRecordedSessionJson(value, name) +
+    (trailingNewline ? "\n" : "");
+  const bytes = new TextEncoder().encode(json);
+  const digestBytes = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", bytes),
+  );
+  return `sha256:${
+    Array.from(
+      digestBytes,
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("")
+  }`;
+}
+
 function viewerProvenance(value: unknown): CalculixViewerSessionProvenance {
   const root = record(value, "viewer session.provenance");
   if (root.kind === "mcp-calculix-recorded-run") {
     exactKeys(
       root,
-      ["kind", "server", "tool"],
+      [
+        "kind",
+        "server",
+        "tool",
+        "runId",
+        "requestId",
+        "resultArtifact",
+      ],
       "viewer session.provenance",
     );
     const server = exactRecord(
@@ -714,6 +1014,16 @@ function viewerProvenance(value: unknown): CalculixViewerSessionProvenance {
         ),
       },
       tool: { name: "calculix_solve_static_recorded", version: "1.0" },
+      runId: pattern(root.runId, RUN_ID, "viewer session.provenance.runId"),
+      requestId: pattern(
+        root.requestId,
+        REQUEST_ID,
+        "viewer session.provenance.requestId",
+      ),
+      resultArtifact: evidenceArtifact(
+        root.resultArtifact,
+        "viewer session.provenance.resultArtifact",
+      ),
     };
   }
   if (root.kind !== "digital-thread-operation") {

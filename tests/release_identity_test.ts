@@ -5,6 +5,10 @@ import {
   parseRecordedStaticExecutionIdentity,
   resolveRecordedStaticRequest,
 } from "../src/runs.ts";
+import {
+  CALCULIX_VIEW_APP_MANIFEST,
+  CALCULIX_VIEW_APP_MANIFEST_JSON,
+} from "../src/viewer-session.ts";
 
 const PROTOCOL_VERSION = "2026-07-28";
 const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
@@ -25,14 +29,9 @@ assert(
 );
 
 Deno.test(
-  "release identities match deno.json across transports, provenance, and viewer",
+  "source identities match deno.json while release docs stay on the attested tag",
   async () => {
     const expected = PACKAGE_VERSION;
-    assertEquals(
-      expected,
-      CURRENT_RELEASE_VERSION,
-      "Update the current release documentation guard when deno.json version changes.",
-    );
 
     assertReleaseVersion(
       "HTTP server",
@@ -77,18 +76,19 @@ Deno.test(
       expected,
     );
 
-    const manifestSource = await Deno.readTextFile(
-      new URL("../src/viewer-session.ts", import.meta.url),
+    const manifestText = await Deno.readTextFile(
+      new URL("../src/ui/app-manifest.json", import.meta.url),
     );
+    const manifest = JSON.parse(manifestText) as {
+      app?: { version?: unknown };
+    };
     assertReleaseVersion(
-      "results viewer manifest",
-      capturedVersion(
-        manifestSource,
-        /id:\s*"io\.casys\.mcp-calculix\.results";\s*readonly title:[\s\S]*?readonly version:\s*"([^"]+)"/,
-        "results viewer manifest identity",
-      ),
+      "serialized results viewer manifest",
+      String(manifest.app?.version ?? ""),
       expected,
     );
+    assertEquals(manifestText, CALCULIX_VIEW_APP_MANIFEST_JSON);
+    assertEquals(JSON.parse(manifestText), CALCULIX_VIEW_APP_MANIFEST);
     const viewerSource = await Deno.readTextFile(
       new URL("../src/ui/results-viewer/src/app.ts", import.meta.url),
     );
@@ -130,7 +130,7 @@ Deno.test(
       new URL("../README.md", import.meta.url),
     );
     assert(
-      readme.includes(`Version \`${expected}\``),
+      readme.includes(`Source version \`${expected}\``),
       "README must describe the package version declared in deno.json.",
     );
     assert(

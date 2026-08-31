@@ -5,6 +5,11 @@ import {
   parseCli,
 } from "../server.ts";
 import { resourceBudgetError } from "../src/api/budgets.ts";
+import {
+  CALCULIX_VIEW_APP_MANIFEST,
+  CALCULIX_VIEW_APP_MANIFEST_JSON,
+  CALCULIX_VIEW_APP_MANIFEST_URI,
+} from "../src/viewer-session.ts";
 
 const PROTOCOL_VERSION = "2026-07-28";
 const META = {
@@ -86,7 +91,7 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.8.3",
+      version: "0.8.4",
     });
 
     const listed = await rpc(url, "tools/list");
@@ -179,6 +184,24 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
       (resource.body.result.contents as Array<Record<string, unknown>>)[0]
         .text as string;
     assertEquals(html.includes("CalculiX Static Results"), true);
+
+    const listedResources = await rpc(url, "resources/list");
+    const resources = listedResources.body.result.resources as Array<
+      Record<string, unknown>
+    >;
+    assert(
+      resources.some((item) => item.uri === CALCULIX_VIEW_APP_MANIFEST_URI),
+      "the serialized App manifest must be discoverable",
+    );
+    const manifestResource = await rpc(url, "resources/read", {
+      uri: CALCULIX_VIEW_APP_MANIFEST_URI,
+    });
+    const manifestText =
+      (manifestResource.body.result.contents as Array<Record<string, unknown>>)[
+        0
+      ].text;
+    assertEquals(manifestText, CALCULIX_VIEW_APP_MANIFEST_JSON);
+    assertEquals(JSON.parse(String(manifestText)), CALCULIX_VIEW_APP_MANIFEST);
   } finally {
     await http.shutdown();
   }
