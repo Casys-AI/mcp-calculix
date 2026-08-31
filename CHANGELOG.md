@@ -2,7 +2,7 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
-## [0.8.4] - Unreleased
+## [0.8.4] - 2026-08-31
 
 ### Added
 
@@ -19,6 +19,11 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
   containing only the result identity, two primary extrema readings, and compact
   provenance. Mesh, boundary-condition, STEP, and detailed-extrema objects are
   no longer rendered as a bundled dashboard catalog.
+- The README now leads with a real TPS03 App capture and delegates analysis,
+  evidence, deployment, and contributor detail to focused documentation pages.
+- Release workflows now pin the split View source whose package identities
+  match the locked viewer build (`mcp-view` `0.9.1`, contracts `0.1.0`, and
+  components `0.2.0`).
 
 ## [0.8.3] - 2026-08-30
 

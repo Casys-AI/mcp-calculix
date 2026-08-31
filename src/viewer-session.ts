@@ -44,12 +44,11 @@ export interface CalculixViewAppManifest {
 }
 
 /** Exact package artifact served by the provider for host-side App discovery. */
-export const CALCULIX_VIEW_APP_MANIFEST = parseCalculixViewAppManifest(
-  serializedViewAppManifest,
-);
+export const CALCULIX_VIEW_APP_MANIFEST: CalculixViewAppManifest =
+  parseCalculixViewAppManifest(serializedViewAppManifest);
 
 /** Canonical bytes exposed by the manifest MCP resource. */
-export const CALCULIX_VIEW_APP_MANIFEST_JSON = `${
+export const CALCULIX_VIEW_APP_MANIFEST_JSON: string = `${
   JSON.stringify(CALCULIX_VIEW_APP_MANIFEST)
 }\n`;
 

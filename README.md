@@ -4,52 +4,60 @@
 [![Release checks](https://github.com/Casys-AI/mcp-calculix/actions/workflows/publish.yml/badge.svg)](https://github.com/Casys-AI/mcp-calculix/actions/workflows/publish.yml)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A self-hosted MCP server for bounded finite-element analysis of STEP parts. It
-uses [Gmsh](https://gmsh.info) to create a tetrahedral mesh, lowers explicit
-physical inputs into a CalculiX deck, runs [CalculiX](http://www.calculix.de),
-and returns closed, unit-bearing physical results.
+Bounded finite-element analysis for STEP parts, exposed as an MCP server and a
+compact MCP App. Gmsh creates the tetrahedral mesh, CalculiX performs the
+analysis, and the server returns closed, unit-bearing observations.
 
 ```text
-STEP part -> private SHA-256 snapshot -> Gmsh C3D4/C3D10 mesh
-          -> code-generated CalculiX deck -> parsed physical observations
+STEP bytes -> SHA-256 snapshot -> Gmsh mesh -> generated CalculiX deck
+           -> parsed observations -> optional recorded evidence -> MCP App
 ```
 
-Source version `0.8.4` is unreleased. It keeps the bounded analysis surface of
-the attested `0.8.3` release and adds the serialized MCP View App contract,
-strict recorded-viewer joins, and the one-component MCP View v2 result surface.
-The latest published image and JSR identity remain `0.8.3`; the source version
-must not be treated as published until a separate release completes.
+![Recorded CalculiX static response in the MCP App](docs/assets/calculix-results-viewer-tps03.png)
 
-This is a constrained analysis service, not a generic CalculiX shell. Callers
-provide STEP geometry and reviewed physical values; they cannot submit an
-arbitrary `.inp` deck, command, executable, or solver flag. The server reports
-observations, never a safety, compliance, or requirement verdict.
+<sub>Actual TPS03 recorded session replayed through the read-only
+<code>viewer.session.apply</code> action. “Documentary” is literal: this view
+reports two observations and their result-artifact identity, never an
+engineering verdict.</sub>
 
-## Quick start
+Source version `0.8.4` adds an exact serialized App contract, strict joins for
+recorded viewer sessions, and a single responsive result component. The server
+is deliberately not a generic CalculiX shell: callers provide STEP geometry and
+reviewed physical values, not arbitrary decks, commands, executables, or flags.
 
-The release publishes a multi-architecture image for `linux/amd64` and
-`linux/arm64`. Its entrypoint is `./docker-entrypoint.sh` and its default
-command is `http`. The exact index digest is recorded after publication in the
-[v0.8.3 release identity](https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.3/release-identity.json).
+## What it covers
 
-`ghcr.io/casys-ai/mcp-calculix:0.8.3` is a mutable discovery tag, not a
-qualified deployment identity. `ghcr.io/casys-ai/mcp-calculix:latest` is also
-mutable. Read the immutable deployment reference from the release identity:
+- Mesh and named-selection preflight before solve physics.
+- Linear static, modal, linear buckling, Norton-law creep, and steady-state
+  coupled temperature-displacement analyses.
+- A recorded static path with idempotent request identity, exact evidence
+  resources, recovery states, and replay validation.
+- One App-owned static-result view for ordinary results, recorded fleet runs,
+  and exact Digital Thread projections.
+
+The server reports solver observations. It does not infer loads or materials,
+approve a design, or turn a successful run into a safety, compliance, or
+requirement conclusion. See [analysis contracts](docs/analysis-contracts.md) and
+[honest limits](docs/analysis-contracts.md#honest-limits).
+
+## Run the released server
+
+Release `0.8.4` publishes to JSR and as a multi-architecture image for
+`linux/amd64` and `linux/arm64`. The GitHub release records the exact OCI index
+digest; use that immutable identity rather than a tag:
+
+`ghcr.io/casys-ai/mcp-calculix:0.8.4` is a mutable discovery tag, not a
+qualified deployment identity. `latest` is mutable too.
 
 ```bash
-RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.3/release-identity.json
+RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.4/release-identity.json
 curl -fsSLo release-identity.json "$RELEASE_IDENTITY_URL"
 IMAGE_REF="$(jq -er '.image | select(test("^ghcr\\.io/casys-ai/mcp-calculix@sha256:[0-9a-f]{64}$"))' release-identity.json)"
 docker pull "$IMAGE_REF"
 ```
 
-Ephemeral STEP and mesh directories are removed on a best-effort basis after
-each call. A cleanup failure does not turn a completed preflight into durable
-evidence; operators should monitor and reclaim stale OS temporary directories.
-
-### HTTP over Docker
-
-Run the stateless HTTP mode on loopback:
+Run the stateless HTTP transport on loopback, with STEP inputs read-only and
+recorded evidence on a persistent volume:
 
 ```bash
 docker run --rm --name mcp-calculix \
@@ -60,40 +68,13 @@ docker run --rm --name mcp-calculix \
   "$IMAGE_REF" http
 ```
 
-The endpoint is `http://127.0.0.1:3015/mcp`. It implements the stateless
-`2026-07-28` MCP transport: each request carries its protocol version and client
-capabilities, and there is no connection handshake or session ID.
-
-A discovery smoke test:
+The MCP endpoint is `http://127.0.0.1:3015/mcp`. For native stdio from JSR:
 
 ```bash
-curl -s -X POST http://127.0.0.1:3015/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H 'MCP-Protocol-Version: 2026-07-28' \
-  -H 'Mcp-Method: server/discover' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.4/server --stdio
 ```
 
-### Native stdio
-
-The server starts the era-aware stdio transport directly. It accepts classic
-`2025-06-18` initialization and keeps JSON-RPC on stdout.
-
-Run the 0.8.3 JSR entrypoint:
-
-```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.3/server --stdio
-```
-
-Or run it from a source tree:
-
-```bash
-deno run --allow-all server.ts --stdio
-```
-
-To use native stdio from the published image, pass `stdio` to Docker and keep
-stdin open with `-i`:
+Or configure stdio from the released image:
 
 ```json
 {
@@ -118,643 +99,45 @@ stdin open with `-i`:
 }
 ```
 
-Tool calls must use paths visible inside the container, such as
-`/inputs/bracket.step`. Keep one live writer per recorded-run volume; do not
-point multiple running server containers at the same `calculix-runs` volume.
+Container calls must use paths visible inside the container, such as
+`/inputs/bracket.step`. Keep one active writer per recorded-run volume.
 
-### Native Deno run
+## Viewer and evidence
 
-Install Deno 2.9.6, Gmsh, and CalculiX first:
+The server serves its whole-view resource at `ui://mcp-calculix/results-viewer`
+and its machine-readable App manifest at `ui://mcp-calculix/app-manifest`. The
+viewer is one semantic `calculix.static-result` component: result identity,
+maximum displacement, maximum von Mises stress, and compact provenance. It never
+calls a solve.
 
-```bash
-apt install gmsh calculix-ccx     # Debian/Ubuntu
-brew install deno gmsh calculix   # macOS/Homebrew
-```
+Recorded static runs retain the exact STEP snapshot, request, Gmsh program and
+mesh, generated deck, native diagnostics, DAT output, and normalized result.
+Every resource read is checked against the durable ledger before publication.
+The full contract, recovery model, TPS03 capture identity, and Digital Thread
+boundary are documented in
+[Recorded runs and viewer](docs/recorded-runs-and-viewer.md).
 
-Run the 0.8.3 JSR entrypoint over HTTP:
+## Documentation
 
-```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.3/server --port=3015
-```
+- [Analysis contracts, units, examples, and limits](docs/analysis-contracts.md)
+- [Recorded runs, evidence resources, and MCP App](docs/recorded-runs-and-viewer.md)
+- [Deployment, transports, security, and operations](docs/deployment-and-operations.md)
+- [Development and release gates](docs/development.md)
+- [Changelog](CHANGELOG.md) · [Security policy](SECURITY.md)
 
-From a source tree:
+## Develop
 
-```bash
-export MCP_VIEW_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view
-export MCP_VIEW_CONTRACTS_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view-contracts
-export MCP_VIEW_COMPONENTS_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view-components
-deno task build:ui
-deno task serve
-```
-
-Viewer source builds are intentionally local and fail closed. All three roots
-must be explicit split packages with matching package identities; there is no
-fallback to a published monolithic `mcp-view` release. Runtime consumers use the
-already-versioned single-file viewer resource and do not need these source
-packages.
-
-The native server binds `127.0.0.1` by default. `--port` and `--hostname`
-configure that entry point; `MCP_PORT` and `MCP_HOSTNAME` supply the same values
-when the corresponding CLI option is absent. Missing `gmsh` or `ccx` binaries
-produce an install-oriented error before a result can be returned.
-
-The JSR export also exposes the tool definitions, strict result schemas, deck
-builders, parsers, and recorded-run store for Deno applications:
+Deno 2.9.6 is the release toolchain. Gmsh and CalculiX are required only for the
+opt-in native end-to-end gate.
 
 ```bash
-deno add jsr:@casys/mcp-calculix@0.8.3
-```
-
-## Tool surface
-
-This source tree registers the following public capabilities:
-
-| Tool                             | Analysis or action                                                     | Closed structured result                                                                                              |
-| -------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `calculix_mesh_preflight`        | Gmsh mesh and named-selection inspection before choosing solve physics | `mesh-selection-preflight` `1.0`: mesh-node bounds, mesh counts, nodes per selection, and empty-selection diagnostics |
-| `calculix_solve_static`          | Linear elastic `*STATIC`                                               | `static-solve` `2.0`: maximum displacement and von Mises stress                                                       |
-| `calculix_solve_static_recorded` | Same static analysis with durable exact evidence                       | `static-solve-recorded` `2.0`: observations plus run/artifact ledger                                                  |
-| `calculix_run_get`               | Read-only lookup by one `run_id` or `request_id`                       | Recovery union `1.0`: `completed`, `dispatched`, `quarantined`, `evicted`, `not_found`, or legacy `outcome_unknown`   |
-| `calculix_solve_modal`           | Eigenfrequency `*FREQUENCY`                                            | `modal-solve` `1.0`: ascending natural frequencies in Hz                                                              |
-| `calculix_solve_buckling`        | Linear eigenvalue buckling: static preload then `*BUCKLE`              | `buckle-solve` `1.0`: critical load factors                                                                           |
-| `calculix_solve_creep`           | Constant-load `*VISCO` creep with a Norton law                         | `creep-solve` `1.0`: displacement and von Mises stress at the final converged increment                               |
-| `calculix_solve_coupled_thermal` | Steady-state `*COUPLED TEMPERATURE-DISPLACEMENT`                       | `coupled-thermal-solve` `1.0`: maximum temperature, displacement, and von Mises stress                                |
-
-Every solve copies the requested STEP file into a private per-call snapshot and
-computes SHA-256 from the bytes that Gmsh will consume. Ordinary solves validate
-shared physical inputs first — selection names and boxes, mesh size, element
-order, timeout, material bounds, digest format, and declared fixed/load/BC
-references — and reject those errors before the snapshot, Gmsh, or CalculiX.
-Every documented input object is closed: unknown fields are refused with the
-precise input path rather than being silently ignored. Non-recorded solves
-accept `expected_step_sha256` optionally. The recorded static solve requires it,
-together with a caller-generated `request_id`.
-
-`calculix_mesh_preflight` uses the same private snapshot and Gmsh lowering,
-without material inputs, boundary conditions, deck generation, or `ccx`. It is
-the quick check for selection boxes before a solve: it returns the generated
-mesh-node coordinate bounds in mm, mesh node/element counts, and a node count
-for each requested selection. A box that creates an empty NSET is returned in
-the closed `errors` array with `empty_selection`; Gmsh or input failures still
-return a tool error. The preflight has a two-minute Gmsh limit and accepts at
-most 32 named boxes. Its snapshot and mesh files are removed at the end of the
-call, so it does not add recorded-run resources or make a physical claim.
-
-Only `calculix_solve_static_recorded` creates durable run evidence. Modal,
-buckling, creep, coupled-thermal, and ordinary static results are closed MCP
-results but do not create recorded-run resources in `0.8.3`.
-
-## Geometry, selections, loads, and units
-
-### STEP and Gmsh flow
-
-- `step_path` is an absolute path in the server's filesystem namespace. An HTTP
-  server cannot read a file that exists only on the MCP client's machine; mount
-  or stage it where the server can see it.
-- The generated Gmsh program publishes volume `1` as the `PART` physical volume.
-  Treat `0.8.3` as a single-part, single-volume contract. Assemblies and
-  multi-solid STEP models are not advertised inputs.
-- `mesh_size_mm` has no default. Choose it relative to the smallest relevant
-  feature and perform a mesh-convergence study before relying on a result.
-- `element_order` is `1` for C3D4 linear tetrahedra or `2` for C3D10 quadratic
-  tetrahedra. It defaults to `2`.
-- Gmsh surface triangles are stripped from its Abaqus export; the CalculiX deck
-  contains volume elements and node sets.
-
-### Mesh and selection preflight
-
-Use `calculix_mesh_preflight` when an agent needs to validate a STEP snapshot
-and geometric face boxes before specifying any FEA physics:
-
-```json
-{
-  "step_path": "/inputs/bracket.step",
-  "mesh_size_mm": 4,
-  "selections": [
-    {
-      "name": "FIXED",
-      "box": {
-        "min": [-31, -21, -3.1],
-        "max": [31, 21, -2.4]
-      }
-    }
-  ]
-}
-```
-
-The `boundsMm` result is the extent of nodes in the generated mesh, rather than
-an independent CAD-topology or solid-body measurement. Use it with the
-per-selection node counts to narrow a box, then provide reviewed material and
-boundary conditions to the appropriate solve operation.
-
-### Bounding-box face designation
-
-Every boundary condition refers to a named selection:
-
-```json
-{
-  "name": "FIXED",
-  "box": {
-    "min": [-31, -21, -3.1],
-    "max": [31, 21, -2.4]
-  }
-}
-```
-
-The server emits Gmsh `Surface In BoundingBox` and turns every surface enclosed
-by that axis-aligned box into a named node set. This is geometric selection, not
-stable CAD topology naming:
-
-- coordinates are in millimetres and refer to the STEP coordinate system;
-- `min` must be strictly lower than `max` on all three axes, so a planar face
-  needs a small amount of thickness in its normal direction;
-- selection names must match `^[A-Za-z][A-Za-z0-9_]{0,60}$` because they become
-  Abaqus/CalculiX NSET names;
-- a broad box may intentionally capture more than one surface;
-- a box that produces no nodes is a hard error naming the failed selection.
-
-Get the part's bounding box from the CAD system that created the STEP file, add
-a deliberate tolerance around the intended face, and inspect
-`mesh.nodesPerSelection` in the result. Do not guess coordinates from an image.
-
-### Physical conventions
-
-| Quantity                          | Input/output unit and behavior                                                       |
-| --------------------------------- | ------------------------------------------------------------------------------------ |
-| Geometry, mesh size, displacement | mm                                                                                   |
-| Force                             | N; each `force_n` is a **total** vector distributed evenly across the selected nodes |
-| Young's modulus, stress           | MPa                                                                                  |
-| Poisson's ratio                   | dimensionless and constrained to `(0, 0.5)` by deck construction                     |
-| Modal density                     | kg/m³ input, converted exactly to t/mm³ by `1e-12`; frequencies are Hz               |
-| Time                              | s                                                                                    |
-| Temperature                       | °C; temperature differences are also valid K differences for expansion               |
-| Conductivity                      | W/(m·K), written directly as mW/(mm·K), which is numerically identical               |
-| Thermal expansion                 | 1/K                                                                                  |
-| Norton coefficient                | MPa^(-n) s^(-1), **not** Pa^(-n) s^(-1)                                              |
-
-`material.e_mpa`, `material.nu`, density, conductivity, expansion, and Norton
-parameters are caller-supplied physical facts. The server does not infer them
-from a material name.
-
-`fixed` means all three translational degrees of freedom are fixed. Static,
-buckling, and creep loads are total nodal-force vectors. A mechanically fixed
-selection cannot also be mechanically loaded, including when two different names
-share actual mesh node IDs after NSET expansion (wrapped lists and Abaqus
-`GENERATE`). In the coupled thermal tool, a selection may be both mechanically
-fixed and assigned a temperature because those use independent degrees of
-freedom.
-
-## Examples
-
-These examples use the repository's bracket coordinate system and assume the
-file is visible to the server as `/inputs/bracket.step`. The numerical material
-values are examples, not a material database or a design recommendation.
-
-### Recorded linear static
-
-Compute the SHA-256 of the exact STEP bytes first (`shasum -a 256` on macOS or
-`sha256sum` on Linux), replace the example digest, and keep the same
-`request_id` only when retrying the exact same canonical request.
-
-```json
-{
-  "request_id": "fea-bracket-loadcase-0001",
-  "step_path": "/inputs/bracket.step",
-  "expected_step_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "mesh_size_mm": 4,
-  "material": { "e_mpa": 70000, "nu": 0.33 },
-  "selections": [
-    {
-      "name": "FIXED",
-      "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] }
-    },
-    {
-      "name": "LOADED",
-      "box": { "min": [-31, -21, 49.4], "max": [-24, 21, 50.1] }
-    }
-  ],
-  "fixed": ["FIXED"],
-  "loads": [
-    { "selection": "LOADED", "force_n": [0, 0, -500] }
-  ]
-}
-```
-
-Call `calculix_solve_static_recorded` with that object. The ordinary
-`calculix_solve_static` accepts the same physical fields without `request_id`;
-its `expected_step_sha256` is optional.
-
-### Modal
-
-Modal analysis has no excitation load. Density is mandatory, and `n_modes`
-defaults to `6` with an allowed range of `1..30`.
-
-```json
-{
-  "step_path": "/inputs/bracket.step",
-  "mesh_size_mm": 4,
-  "material": { "e_mpa": 70000, "nu": 0.33 },
-  "density_kg_m3": 2700,
-  "selections": [
-    {
-      "name": "FIXED",
-      "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] }
-    }
-  ],
-  "fixed": ["FIXED"],
-  "n_modes": 3
-}
-```
-
-The result contains natural frequencies only. It does not expose mode-shape
-fields or effective modal mass.
-
-### Linear buckling
-
-The loads define the reference static preload. For each returned factor
-`lambda`, the corresponding critical load is `lambda * applied_load`; a first
-factor below `1` means the reference load already exceeds the linear critical
-load estimate. The reference loads must contain at least one non-zero force
-component; an all-zero preload has no buckling interpretation and is refused
-before meshing.
-
-```json
-{
-  "step_path": "/inputs/bracket.step",
-  "mesh_size_mm": 4,
-  "material": { "e_mpa": 70000, "nu": 0.33 },
-  "selections": [
-    {
-      "name": "FIXED",
-      "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] }
-    },
-    {
-      "name": "LOADED",
-      "box": { "min": [-31, -21, 49.4], "max": [-24, 21, 50.1] }
-    }
-  ],
-  "fixed": ["FIXED"],
-  "loads": [
-    { "selection": "LOADED", "force_n": [0, 0, -500] }
-  ],
-  "n_modes": 2
-}
-```
-
-This is a linear eigenvalue result, not nonlinear collapse or post-buckling
-behavior.
-
-### Norton-law creep
-
-The load is applied and held for `duration_s`. The output is the state at the
-last converged increment, not the maximum over the complete history. The text
-summary reports the observed final increment time parsed from the displacement
-and stress sections. A premature stop before `duration_s` (beyond CalculiX
-scientific-print tolerance) is an error; `structuredContent` still carries the
-requested duration and is otherwise unchanged.
-
-```json
-{
-  "step_path": "/inputs/bracket.step",
-  "mesh_size_mm": 8,
-  "element_order": 1,
-  "material": { "e_mpa": 70000, "nu": 0.33 },
-  "norton_a": 1e-10,
-  "norton_n": 3,
-  "duration_s": 100,
-  "initial_time_increment_s": 10,
-  "selections": [
-    {
-      "name": "FIXED",
-      "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] }
-    },
-    {
-      "name": "LOADED",
-      "box": { "min": [-31, -21, 49.4], "max": [-24, 21, 50.1] }
-    }
-  ],
-  "fixed": ["FIXED"],
-  "loads": [
-    { "selection": "LOADED", "force_n": [0, 0, -500] }
-  ]
-}
-```
-
-The fixture value `1e-10 MPa^(-3) s^(-1)` was chosen for a fast test and is not
-a real-material recommendation. To express a Norton `A` coefficient given in
-Pa^(-n) s^(-1) in the required MPa^(-n) s^(-1), multiply it by `10^(6n)`; for
-`n = 3`, that factor is `10^18`.
-
-### Steady-state coupled thermal-mechanical
-
-At least one temperature boundary condition is required; two different
-temperatures normally create the gradient of interest. Mechanical loads are
-optional.
-
-```json
-{
-  "step_path": "/inputs/bracket.step",
-  "mesh_size_mm": 8,
-  "element_order": 1,
-  "material": { "e_mpa": 70000, "nu": 0.33 },
-  "conductivity_w_mk": 167,
-  "expansion_per_k": 0.0000236,
-  "reference_temperature_c": 20,
-  "selections": [
-    {
-      "name": "FIXED",
-      "box": { "min": [-31, -21, -3.1], "max": [31, 21, -2.4] }
-    },
-    {
-      "name": "HOT",
-      "box": { "min": [-31, -21, 49.4], "max": [-24, 21, 50.1] }
-    }
-  ],
-  "fixed": ["FIXED"],
-  "thermal_bcs": [
-    { "selection": "FIXED", "temperature_c": 20 },
-    { "selection": "HOT", "temperature_c": 200 }
-  ]
-}
-```
-
-`reference_temperature_c` sets the zero-thermal-strain reference through
-`*INITIAL CONDITIONS`. The solve is steady state, so specific heat and density
-are intentionally absent. This tool does not perform a transient heat-up.
-
-## Results, viewer, and provenance
-
-### Ordinary results
-
-Every solve returns a short text summary plus strict `structuredContent`.
-Results include the exact STEP digest and byte count, mesh counts, named-set
-node counts, the applied constraints, and the analysis-specific observations.
-Extra or missing output fields are rejected by the server's closed schemas.
-
-For a non-recorded solve, `inputArtifact.path` is the private snapshot that was
-actually passed to Gmsh. It is removed when the call ends. `sourcePath` is only
-the caller-supplied location. Use `inputArtifact.sha256`, not either mutable or
-ephemeral path, as the input identity.
-
-The server publishes the MCP App at `ui://mcp-calculix/results-viewer`. Its
-exact serialized contract is discoverable and readable at
-`ui://mcp-calculix/app-manifest` as `application/json`. `calculix_solve_static`,
-`calculix_solve_static_recorded`, and the read-only `calculix_run_get` link it
-in their tool metadata. The viewer parser accepts both ordinary and
-recorded-static `2.0` results. For a completed run lookup, the App reads the
-exact recorded `result.json` resource, checks its URI, media type, byte count
-and SHA-256 against the complete run ledger, and only then projects the
-observations. It never calls a solve tool. Non-terminal recovery states stay
-visibly `unresolved` or `unavailable` rather than being replaced with inferred
-data. The default viewer is exactly one `calculix.static-result` semantic
-component. It shows the result identity, maximum displacement, maximum von Mises
-stress, their node/element IDs, and exact result provenance. Mesh, STEP,
-constraint, and detailed extrema objects are not nested as dashboard panels. The
-component renders one column in a narrow whiteboard window and only places the
-two primary readings side by side when its container is at least `30rem`.
-
-### Recorded static runs
-
-`calculix_solve_static_recorded` freezes effective defaults, claims the
-caller-supplied `request_id` before native execution, observes the actual `gmsh`
-and `ccx` versions, and seals the server/method/lowering/engine identity. The
-container image identity remains explicitly `unattested`; the provider does not
-invent an OCI digest.
-
-An exact retry of a completed canonical request returns the original run without
-starting Gmsh or CalculiX again. Reusing the same `request_id` with different
-arguments fails closed. An ambiguous dispatched outcome is not blindly
-re-executed. A known pre-completion failure is quarantined.
-
-Each completed run registers exactly nine resources. Every read reopens the
-server-owned file and verifies its byte count and SHA-256 against the durable
-ledger:
-
-| Resource name  | MIME type               | Meaning                                                    |
-| -------------- | ----------------------- | ---------------------------------------------------------- |
-| `input.step`   | `model/step` blob       | Exact STEP snapshot consumed                               |
-| `request.json` | `application/json` text | Canonical effective request and execution identity         |
-| `mesh.geo`     | `text/plain`            | Exact Gmsh program, using the stable relative `input.step` |
-| `mesh.inp`     | `text/plain`            | Cleaned volume mesh consumed by the deck builder           |
-| `gmsh.log`     | `text/plain`            | Gmsh diagnostics                                           |
-| `job.inp`      | `text/plain`            | Code-generated CalculiX deck                               |
-| `ccx.log`      | `text/plain`            | CalculiX diagnostics                                       |
-| `job.dat`      | `text/plain`            | Exact CalculiX data output parsed by the server            |
-| `result.json`  | `application/json` text | Normalized closed physical result                          |
-
-Resource URIs are closed and have this shape:
-
-```text
-casys://calculix/runs/<run_id>/<resource-name>
-```
-
-Use `resources/read` with the issued URI; filesystem paths are never accepted as
-resource identities. At startup and recovery the store also reparses the
-request/result contracts, inspects `mesh.inp`, regenerates `job.inp`, and
-reparses `job.dat` so a hash-coherent but causally disconnected bundle is not
-published as a valid run.
-
-Use `calculix_run_get` with exactly one lookup key:
-
-```json
-{ "request_id": "fea-bracket-loadcase-0001" }
-```
-
-or:
-
-```json
-{ "run_id": "r-00000000-0000-0000-0000-000000000000" }
-```
-
-Recorded runs live under `state/runs` by default and retain the newest `24`. Set
-`CALCULIX_RUNS_DIRECTORY` to a persistent path and `CALCULIX_MAX_RECORDED_RUNS`
-to a positive integer. Evicted request IDs retain tombstones so they cannot
-silently create a second physical run; this request index grows monotonically
-and must be included in capacity planning.
-
-The claim election is cross-process safe, but retention and each live MCP
-resource registry are single-writer concerns. Use one active server writer per
-runs directory. If a different process completed a run, restart or call
-`calculix_run_get` in the current process to republish its resources.
-
-### Casys Digital Thread boundary
-
-This repository is the fleet `mcp-calculix` capability used for bounded analysis
-and sensitivity work. In `casys-digital-thread`, `analyze.run-fea-sensitivity@1`
-may use this fleet provider.
-
-The registered product operation `verify.run-fea-static-proof@3` is different:
-it runs Gmsh and CalculiX in a digest-pinned local microVM, imports the
-qualified core lowering, and then uses Digital Thread-owned evidence plus a
-separate SysON evaluation. It does **not** call this MCP server and does not
-claim `mcp-calculix` provenance. A successful fleet solve is therefore not a
-product static `@3` proof, and an isolated `@3` result must not be relabelled as
-a fleet MCP run.
-
-The App-owned recorded-session contract is
-`io.casys.mcp-calculix.recorded-static-proof-session/1.0`, delivered unchanged
-through the read-only `viewer.session.apply` action. Its provenance union keeps
-an exact `verify.run-fea-static-proof@3` projection distinct from a recorded
-`calculix_solve_static_recorded` run, and its projection status remains
-`available`, `unresolved`, or `unavailable` without fallback inference. The App
-requires the opaque host anchor to repeat the exact result artifact URI and
-fingerprint. Available isolated results are rehashed as canonical JSON; fleet
-results join their run/request identities and canonical `result.json` bytes to
-the recorded ledger before rendering. The App recomputes
-`basis.sessionFingerprint` over the canonical subdocument
-`{schemaVersion, kind, basis, anchor, provenance, projection}`. Inside that
-subdocument, `basis` contains `projectId`, `projectRevision`, `subjectId`, and
-`thread`; only the self-referential `sessionFingerprint` is omitted. Canonical
-JSON uses recursively sorted object keys and finite numbers, and rejects sparse
-or adorned arrays. Recorded Thread artifact fingerprints keep their original
-persisted-artifact meaning. The exported `CALCULIX_VIEW_APP_MANIFEST` and the
-shipped `src/ui/app-manifest.json` declare one App-owned whole-view resource,
-its result schemas, accepted action, and session schema; it does not advertise a
-host-selectable component catalog. `deno task build:ui`, the UI part of
-`deno task test`, and the release bundle gate require the three explicit local
-package roots shown above. They validate the package names and entry points
-before loading code, without changing any released dependency version.
-
-## Honest limits
-
-- One advertised STEP part and one volume (`PART = {1}`), one isotropic
-  material, and C3D4/C3D10 tetrahedra. No assemblies, shells, beams, composite
-  layups, multiple materials, or contact.
-- Fully fixed translational supports only. No partial-DOF constraints,
-  prescribed mechanical displacement, symmetry condition, connector, or joint
-  model.
-- Total nodal forces only. No pressure, traction, moment, gravity/body force,
-  centrifugal load, or imported load field.
-- Static is small-deformation linear elasticity. Buckling is linear eigenvalue
-  buckling, not nonlinear post-buckling or collapse.
-- Modal returns frequencies only, not mode shapes, participation factors, or
-  effective modal mass.
-- Creep is a single Norton law under constant load and reports the final
-  increment. It does not model prescribed-displacement stress relaxation,
-  temperature-dependent creep parameters, damage, or rupture.
-- Coupled thermal is steady state with prescribed nodal temperatures,
-  conductivity, and isotropic expansion. No heat flux, volumetric heat source,
-  convection, radiation, phase change, or transient response.
-- Structured results expose mesh counts and extrema, not complete nodal or
-  element fields, contours, convergence studies, or uncertainty estimates.
-- Durable, replay-checked MCP resources exist only for recorded static solves.
-- No solver success is converted into a requirement, fitness, safety,
-  certification, or compliance conclusion.
-- I/O is budgeted by `src/api/budgets.ts` before a full in-memory read and while
-  streaming subprocess output. These are fleet MCP host limits, not Digital
-  Thread `verify.run-fea-static-proof@3` proof rules:
-
-  | Resource                        | Limit     | Error code                                            |
-  | ------------------------------- | --------- | ----------------------------------------------------- |
-  | STEP snapshot                   | 32 MiB    | `resource_limit` (`step_bytes`)                       |
-  | Named selections                | 32        | `resource_limit` (`selections`)                       |
-  | Mesh nodes                      | 250000    | `output_limit` (`mesh_nodes`)                         |
-  | Mesh volume elements            | 1000000   | `output_limit` (`mesh_elements`)                      |
-  | `mesh.inp` text lines processed | 1000000   | `output_limit` (`mesh_lines`)                         |
-  | Node ids per NSET               | 250000    | `output_limit` (`nset_nodes`)                         |
-  | Raw NSET entries parsed         | 1000000   | `output_limit` (`nset_entries`)                       |
-  | Total NSET memberships          | 1000000   | `output_limit` (`nset_memberships`)                   |
-  | Unique NSET names               | 34        | `output_limit` (`nset_sets`)                          |
-  | CalculiX deck                   | 65 MiB    | `resource_limit` (`deck_bytes`)                       |
-  | Gmsh or CalculiX stdout+stderr  | 8 MiB     | `output_limit`                                        |
-  | Executable version diagnostics  | 4 KiB     | `output_limit` (`version_probe_bytes`)                |
-  | Cleaned `mesh.inp`              | 64 MiB    | `output_limit` (`mesh_inp_bytes`)                     |
-  | `job.dat`                       | 64 MiB    | `output_limit` (`job_dat_bytes`)                      |
-  | Solve `timeout_ms`              | 120000 ms | validation or elapsed `resource_limit` (`timeout_ms`) |
-
-These limits describe the public contract, not everything that CalculiX itself
-can do.
-
-## Extension map for contributors
-
-Some extensions fit the current architecture more naturally than others. This is
-a code map, not a release promise:
-
-| Extension                                         | What the implementation must add                                                                                                                                                                                          |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Partial constraints or prescribed displacement    | A versioned boundary-condition schema, deterministic `*BOUNDARY` lowering, result-contract review, and native fixtures                                                                                                    |
-| Pressure, heat flux, or convection                | Stable surface-to-element-face lowering; the current pipeline strips Gmsh surface elements and retains node sets only, so this is not just a new JSON field                                                               |
-| Recorded modal/buckling/creep/thermal runs        | Analysis-specific canonical request/result schemas, exact artifacts, replay parsers, causal regeneration, recovery states, and retention tests; the static ledger is reusable infrastructure but not automatic provenance |
-| Mode shapes or complete stress/temperature fields | A bounded field contract plus richer DAT/FRD parsing, output-size policy, resources, and viewer work                                                                                                                      |
-| Topology-based selections                         | A stable upstream topology/group identity and deterministic lowering; AABBs alone cannot provide persistent CAD face identity after arbitrary geometry edits                                                              |
-| Multiple solids, materials, or contact            | A new assembly/material/interface model and substantial Gmsh/CalculiX lowering, validation, and evidence contracts                                                                                                        |
-| Transient thermal analysis                        | Explicit density, specific heat, time-grid/increment, initial-state, output-history, and convergence contracts                                                                                                            |
-
-When extending a tool, keep physical inputs explicit, add a closed versioned
-result schema, fail before subprocess execution on invalid references, and back
-the deck/parser change with a real CalculiX fixture plus an opt-in native test.
-
-## Deployment and security notes
-
-- The tools read caller-selected server-local files and launch `gmsh` and `ccx`.
-  Run the service with the minimum filesystem visibility possible; a read-only
-  input mount is preferable in Docker.
-- HTTP binds to loopback by default in the native entry point. The Docker image
-  binds inside its container so the explicit host port mapping controls
-  exposure. No authentication layer is configured in this repository; do not
-  expose the endpoint directly to an untrusted network.
-- STEP paths containing quotes, backslashes, or newlines are rejected before
-  they can be embedded in Gmsh input.
-- Ordinary static, modal, buckling, creep, coupled-thermal, and recorded static
-  solves cap each external Gmsh or CalculiX invocation at `120000` ms
-  (`MAX_SOLVE_TIMEOUT_MS`). The default is the same. Ordinary tools reject a
-  larger `timeout_ms` with structured `timeout_out_of_range` and
-  `inputPath: "timeout_ms"`; recorded static validation uses `resource_limit` at
-  `timeout_ms`. Both fail before a STEP snapshot or native subprocess.
-- Byte and cardinality overruns return `resource_limit` or `output_limit` with
-  `context.resource`, `context.limit`, `context.actual`, and `recovery`. Direct
-  TypeScript callers receive `ResourceBudgetError`; MCP callers receive the same
-  object as JSON text in an `isError: true` tool result. They do not truncate
-  untrusted input or subprocess logs after the fact.
-- Bounded file admission accepts regular files only after anchoring their
-  identity; FIFOs, devices, sockets, and directories are rejected. On POSIX,
-  native invocations run in isolated process groups so timeout and diagnostic
-  limits also terminate descendants that retain stdout or stderr.
-- The server allows four concurrent calls and queues backpressure. Recorded
-  completion/retention still requires the one-writer-per-volume deployment rule
-  described above.
-
-See [SECURITY.md](SECURITY.md) for vulnerability reporting.
-
-## Development
-
-```bash
-# Set MCP_VIEW_LOCAL_ROOT, MCP_VIEW_CONTRACTS_LOCAL_ROOT, and
-# MCP_VIEW_COMPONENTS_LOCAL_ROOT as shown under "Native Deno run".
-deno task build:ui
 deno task release:check
-deno task test:native
+CALCULIX_RUN_NATIVE=1 deno task test
 ```
 
-`deno task release:check` runs formatting, type checking, linting, wire/contract
-tests, recorded-run recovery tests, parser fixtures, native stdio tests, and
-viewer-model tests. It also rebuilds the viewer from the audited local split
-packages into a temporary path and compares that output byte-for-byte with the
-versioned HTML, so source or shared-theme drift fails the release gate. Native
-end-to-end Gmsh/CalculiX tests are opt-in so a checkout without solver binaries
-still verifies the pure and wire contracts. Tag workflows install both `gmsh`
-and `calculix-ccx`, run `deno task test:native`, and run a native static solve
-smoke inside the built release image before publishing it.
-
-Key files:
-
-```text
-server.ts                          HTTP and native stdio application, tool/resource registration
-tests/stdio_test.ts                native stdio lifecycle and resource wire coverage
-src/api/budgets.ts                 byte and cardinality budgets, bounded reads, command capture
-src/api/input-artifact.ts          attested STEP snapshots
-src/api/gmsh.ts                    STEP meshing and bounding-box node sets
-src/api/ccx.ts                     deterministic decks, subprocess bridge, parsers
-src/results.ts                     closed result schemas
-src/runs.ts                        claims, ledgers, resources, recovery, retention
-src/tools/solve.ts                 ordinary and recorded static tools
-src/tools/modal.ts                 modal tool
-src/tools/buckling.ts              linear buckling tool
-src/tools/creep.ts                 Norton-law creep tool
-src/tools/coupled_thermal.ts       steady-state coupled thermal tool
-src/ui/results-viewer/             static results MCP App source
-tests/                             pure, wire, recovery, fixture, and native tests
-```
+Building the App source also requires the three explicit local split package
+roots described in [Development](docs/development.md#viewer-build). Runtime
+consumers use the shipped single-file resource and do not need those packages.
 
 ## Citation and license
 
