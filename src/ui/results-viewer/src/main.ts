@@ -1,22 +1,14 @@
-import { startCalculixResultsApp } from "./app.ts";
+import { renderStateMessage, startCalculixResultsApp } from "./app.ts";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("The CalculiX results viewer root is missing.");
 
 void startCalculixResultsApp(root).catch((error) => {
-  const state = document.createElement("div");
-  state.className = "mcp-view-state";
-  state.dataset.tone = "danger";
-  state.setAttribute("role", "alert");
-  const title = document.createElement("strong");
-  title.textContent = "CalculiX viewer unavailable";
-  const detail = document.createElement("div");
-  detail.className = "mcp-view-state-detail";
-  detail.textContent = error instanceof Error
-    ? error.message
-    : "The viewer could not start.";
-  state.append(title, detail);
-  root.replaceChildren(state);
+  root.replaceChildren(renderStateMessage(
+    error instanceof Error ? error.message : "The viewer could not start.",
+    "danger",
+    "CalculiX viewer unavailable",
+  ));
   root.setAttribute("aria-busy", "false");
   console.error(error);
 });

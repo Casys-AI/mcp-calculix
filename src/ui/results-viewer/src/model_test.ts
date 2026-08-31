@@ -22,7 +22,11 @@ import {
   CALCULIX_COMPONENT_REGISTRY,
   CALCULIX_RESULTS_SURFACE,
 } from "./components.tsx";
-import { CALCULIX_APP_INFO, resolveCalculixSurface } from "./app.ts";
+import {
+  CALCULIX_APP_INFO,
+  renderDisplayState,
+  resolveCalculixSurface,
+} from "./app.ts";
 import {
   displayStateFromToolResult,
   displayStateFromViewerSession,
@@ -531,6 +535,41 @@ Deno.test("a malformed host surface is recoverable by a later valid context", ()
   });
 });
 
+Deno.test("status projections use the shared busy-aware state primitive", async () => {
+  const documentModule = await import("linkedom");
+  const dom = documentModule.parseHTML("<html><body></body></html>");
+  const previousDocument = globalThis.document;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: dom.document,
+  });
+  try {
+    const loading = renderDisplayState({ kind: "loading" });
+    assertEquals(loading.classList.contains("mcp-view-state"), true);
+    assertEquals(loading.getAttribute("aria-busy"), "true");
+    assertEquals(
+      loading.querySelectorAll(".mcp-view-state-busy").length,
+      1,
+    );
+
+    const unavailable = renderDisplayState({
+      kind: "unavailable",
+      status: "quarantined",
+      reason: "integrity verification failed",
+    });
+    assertEquals(unavailable.getAttribute("data-tone"), "warning");
+    assertStringIncludes(
+      unavailable.textContent ?? "",
+      "Recorded evidence unavailable",
+    );
+  } finally {
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: previousDocument,
+    });
+  }
+});
+
 Deno.test("compact default source does not import invented verdict or bound widgets", async () => {
   const source = await Deno.readTextFile(
     new URL("./components.tsx", import.meta.url),
@@ -702,6 +741,15 @@ Deno.test({
       assertStringIncludes(root.textContent ?? "", "Mesh summary");
       assertStringIncludes(root.textContent ?? "", "Boundary conditions");
       assertStringIncludes(root.textContent ?? "", "Extrema details");
+      assertEquals(root.querySelectorAll(".mcp-view-stack").length, 2);
+      assertEquals(
+        root.querySelector('[aria-label="Fixed selections"]')?.getAttribute(
+          "role",
+        ),
+        "group",
+      );
+      assertEquals(root.querySelector(".calculix-selection-counts"), null);
+      assertEquals(root.querySelector(".calculix-fixed-selections"), null);
     });
   },
 });

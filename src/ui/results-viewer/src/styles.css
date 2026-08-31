@@ -11,13 +11,3 @@ body {
 .calculix-viewer-state {
   margin: 0.65rem;
 }
-
-.calculix-selection-counts,
-.calculix-fixed-selections {
-  margin-top: 0.55rem;
-}
-
-.calculix-fixed-selections + .mcp-view-key-values,
-.calculix-fixed-selections + .mcp-view-state {
-  margin-top: 0.55rem;
-}

@@ -12,6 +12,7 @@ import {
 import {
   ArtifactRow,
   Badge,
+  BadgeGroup,
   Card,
   ElementBody,
   ElementIdent,
@@ -20,6 +21,7 @@ import {
   KeyValueList,
   MetricGrid,
   SemanticElement,
+  Stack,
   StateMessage,
 } from "@casys/mcp-view-components/preact/components";
 import type { StaticResultsViewData } from "./model.ts";
@@ -135,36 +137,37 @@ const MeshSummary = ({ data }: CalculixComponentProps) => {
       eyebrow="Discretization"
       actions={<Badge tone="neutral">{selections.length} selections</Badge>}
     >
-      <MetricGrid
-        items={[
-          {
-            id: "nodes",
-            label: "Nodes",
-            value: formatInteger(data.mesh.nodes),
-          },
-          {
-            id: "elements",
-            label: "Elements",
-            value: formatInteger(data.mesh.elements),
-          },
-        ]}
-      />
-      {selections.length > 0
-        ? (
-          <KeyValueList
-            className="calculix-selection-counts"
-            items={selections.map(([selection, count], index) => ({
-              id: `selection-${index}`,
-              label: `${selection} nodes`,
-              value: formatInteger(count),
-            }))}
-          />
-        )
-        : (
-          <StateMessage title="No named selections" tone="neutral">
-            This mesh does not report per-selection node counts.
-          </StateMessage>
-        )}
+      <Stack gap="sm">
+        <MetricGrid
+          items={[
+            {
+              id: "nodes",
+              label: "Nodes",
+              value: formatInteger(data.mesh.nodes),
+            },
+            {
+              id: "elements",
+              label: "Elements",
+              value: formatInteger(data.mesh.elements),
+            },
+          ]}
+        />
+        {selections.length > 0
+          ? (
+            <KeyValueList
+              items={selections.map(([selection, count], index) => ({
+                id: `selection-${index}`,
+                label: `${selection} nodes`,
+                value: formatInteger(count),
+              }))}
+            />
+          )
+          : (
+            <StateMessage title="No named selections" tone="neutral">
+              This mesh does not report per-selection node counts.
+            </StateMessage>
+          )}
+      </Stack>
     </Card>
   );
 };
@@ -175,37 +178,36 @@ const Constraints = ({ data }: CalculixComponentProps) => (
     eyebrow="Physical inputs"
     actions={<Badge tone="info">Explicit loads</Badge>}
   >
-    {data.constraints.fixedSelections.length > 0
-      ? (
-        <div
-          aria-label="Fixed selections"
-          class="mcp-view-badges calculix-fixed-selections"
-        >
-          {data.constraints.fixedSelections.map((selection) => (
-            <Badge key={selection} tone="warning">Fixed · {selection}</Badge>
-          ))}
-        </div>
-      )
-      : (
-        <StateMessage title="No fixed selection" tone="warning">
-          This solve result does not declare a fixed support.
-        </StateMessage>
-      )}
-    {data.constraints.loads.length > 0
-      ? (
-        <KeyValueList
-          items={data.constraints.loads.map((load, index) => ({
-            id: `load-${index}`,
-            label: `${load.selection} load`,
-            value: `[${load.forceN.map(formatNumber).join(", ")}] N`,
-          }))}
-        />
-      )
-      : (
-        <StateMessage title="No nodal loads" tone="neutral">
-          This solve result does not contain an explicit load vector.
-        </StateMessage>
-      )}
+    <Stack gap="sm">
+      {data.constraints.fixedSelections.length > 0
+        ? (
+          <BadgeGroup label="Fixed selections">
+            {data.constraints.fixedSelections.map((selection) => (
+              <Badge key={selection} tone="warning">Fixed · {selection}</Badge>
+            ))}
+          </BadgeGroup>
+        )
+        : (
+          <StateMessage title="No fixed selection" tone="warning">
+            This solve result does not declare a fixed support.
+          </StateMessage>
+        )}
+      {data.constraints.loads.length > 0
+        ? (
+          <KeyValueList
+            items={data.constraints.loads.map((load, index) => ({
+              id: `load-${index}`,
+              label: `${load.selection} load`,
+              value: `[${load.forceN.map(formatNumber).join(", ")}] N`,
+            }))}
+          />
+        )
+        : (
+          <StateMessage title="No nodal loads" tone="neutral">
+            This solve result does not contain an explicit load vector.
+          </StateMessage>
+        )}
+    </Stack>
   </Card>
 );
 

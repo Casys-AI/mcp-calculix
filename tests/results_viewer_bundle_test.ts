@@ -108,6 +108,10 @@ Deno.test("built CalculiX viewer contains its App-owned whole view", async () =>
   assertEquals(html.includes("Recorded proof"), false);
   assert(html.includes("mcp-view-card"));
   assert(html.includes("mcp-view-metrics"));
+  assert(html.includes("mcp-view-stack"));
+  assert(html.includes("mcp-view-state-busy"));
+  assertEquals(html.includes("calculix-selection-counts"), false);
+  assertEquals(html.includes("calculix-fixed-selections"), false);
   assert(html.includes("color-scheme: light dark"));
   assert(html.includes(':root[data-theme="dark"]'));
   assert(html.includes("@media (prefers-color-scheme: dark)"));

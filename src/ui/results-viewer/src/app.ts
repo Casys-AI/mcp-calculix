@@ -15,6 +15,11 @@ import {
   type MountedComponentSurface,
 } from "@casys/mcp-view-components";
 import {
+  type PresentationTone,
+  StateMessage,
+} from "@casys/mcp-view-components/preact/components";
+import { createElement, render } from "preact";
+import {
   CALCULIX_VIEW_APP_MANIFEST,
   CALCULIX_VIEWER_SESSION_SCHEMA,
   VIEWER_SESSION_APPLY_ACTION,
@@ -113,7 +118,7 @@ export async function startCalculixResultsApp(
       shell.className = "calculix-component-surface";
       const resolution = resolveCalculixSurface(context.hostContext);
       if (!resolution.ok) {
-        shell.replaceChildren(message(
+        shell.replaceChildren(renderStateMessage(
           resolution.message,
           "danger",
         ));
@@ -136,7 +141,7 @@ export async function startCalculixResultsApp(
         }
         mounted = next;
       }).catch((error) => {
-        shell.replaceChildren(message(
+        shell.replaceChildren(renderStateMessage(
           `The CalculiX component surface failed: ${errorMessage(error)}`,
           "danger",
         ));
@@ -259,26 +264,28 @@ async function showDisplayState(
 export function renderDisplayState(state: DisplayState): HTMLElement {
   switch (state.kind) {
     case "loading":
-      return message(
+      return renderStateMessage(
         "Receiving a CalculiX result or recorded static result…",
         "neutral",
+        undefined,
+        true,
       );
     case "empty":
-      return message(
+      return renderStateMessage(
         "CalculiX returned no supported result projection.",
         "neutral",
       );
     case "error":
-      return message(state.message, "danger");
+      return renderStateMessage(state.message, "danger");
     case "unresolved":
-      return message(
+      return renderStateMessage(
         state.reason ??
           `Recorded evidence remains ${state.status}; no result was inferred.`,
         "warning",
         "Unresolved recorded evidence",
       );
     case "unavailable":
-      return message(
+      return renderStateMessage(
         state.reason ??
           `Recorded evidence is ${state.status}; no result was substituted.`,
         "warning",
@@ -291,25 +298,27 @@ export function renderDisplayState(state: DisplayState): HTMLElement {
   }
 }
 
-function message(
+/** Render the shared state primitive where the view lifecycle expects an element. */
+export function renderStateMessage(
   detail: string,
-  tone: "neutral" | "warning" | "danger",
+  tone: PresentationTone,
   title?: string,
+  busy = false,
 ): HTMLElement {
-  const node = document.createElement("div");
-  node.className = "mcp-view-state calculix-viewer-state";
-  node.dataset.tone = tone;
-  node.setAttribute("role", tone === "danger" ? "alert" : "status");
-  if (title) {
-    const heading = document.createElement("strong");
-    heading.textContent = title;
-    node.append(heading);
+  const host = document.createElement("div");
+  render(
+    createElement(
+      StateMessage,
+      { busy, className: "calculix-viewer-state", title, tone },
+      detail,
+    ),
+    host,
+  );
+  const node = host.firstElementChild;
+  if (!node) {
+    throw new Error("The shared CalculiX state message did not render.");
   }
-  const body = document.createElement("div");
-  body.className = "mcp-view-state-detail";
-  body.textContent = detail;
-  node.append(body);
-  return node;
+  return node as HTMLElement;
 }
 
 function errorMessage(error: unknown): string {
