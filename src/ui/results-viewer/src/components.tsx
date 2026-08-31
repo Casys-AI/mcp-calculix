@@ -54,7 +54,6 @@ const StaticResult = ({ data }: CalculixComponentProps) => (
               value: formatNumber(data.metrics.maxDisplacement.value),
               unit: data.metrics.maxDisplacement.unit,
               detail: `Node ${data.metrics.maxDisplacement.nodeId}`,
-              tone: "info",
             },
             {
               id: "max-von-mises",
@@ -62,7 +61,6 @@ const StaticResult = ({ data }: CalculixComponentProps) => (
               value: formatNumber(data.metrics.maxVonMises.value),
               unit: data.metrics.maxVonMises.unit,
               detail: `Element ${data.metrics.maxVonMises.elementId}`,
-              tone: "info",
             },
           ]}
         />
