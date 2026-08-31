@@ -4,7 +4,11 @@ import {
   assertStringIncludes,
   assertThrows,
 } from "@std/assert";
-import { mountComponentSurface } from "@casys/mcp-view-components";
+import {
+  advertisedComponentCatalog,
+  CASYS_SURFACE_CONTEXT_KEY,
+  mountComponentSurface,
+} from "@casys/mcp-view-components";
 import type { PreactSurfaceContext } from "@casys/mcp-view-components/preact";
 import {
   CALCULIX_RESULT_SCHEMA_IDS,
@@ -14,10 +18,11 @@ import {
   VIEWER_SESSION_APPLY_ACTION,
 } from "../../../viewer-session.ts";
 import {
+  CALCULIX_COMPONENT_KEYS,
   CALCULIX_COMPONENT_REGISTRY,
   CALCULIX_RESULTS_SURFACE,
 } from "./components.tsx";
-import { CALCULIX_APP_INFO } from "./app.ts";
+import { CALCULIX_APP_INFO, resolveCalculixSurface } from "./app.ts";
 import {
   displayStateFromToolResult,
   displayStateFromViewerSession,
@@ -474,59 +479,294 @@ Deno.test("viewer sessions survive pre-connect delivery and component remounts i
   assertEquals(applied, [1, 2, 3]);
 });
 
+Deno.test("default surface is one compact static-result card", () => {
+  const catalog = advertisedComponentCatalog(CALCULIX_COMPONENT_REGISTRY);
+  assertEquals(
+    Object.keys(catalog.components).toSorted(),
+    [
+      CALCULIX_COMPONENT_KEYS.constraints,
+      CALCULIX_COMPONENT_KEYS.displacementDetails,
+      CALCULIX_COMPONENT_KEYS.meshSummary,
+      CALCULIX_COMPONENT_KEYS.solveMetrics,
+      CALCULIX_COMPONENT_KEYS.staticResult,
+    ].toSorted(),
+  );
+  assertEquals(catalog.defaultSurface, CALCULIX_RESULTS_SURFACE);
+  assertEquals(CALCULIX_RESULTS_SURFACE.layout, {
+    type: "stack",
+    gap: "sm",
+  });
+  assertEquals(CALCULIX_RESULTS_SURFACE.components, [{
+    id: "static-result",
+    component: CALCULIX_COMPONENT_KEYS.staticResult,
+  }]);
+});
+
+Deno.test("a malformed host surface is recoverable by a later valid context", () => {
+  const malformed = resolveCalculixSurface({
+    [CASYS_SURFACE_CONTEXT_KEY]: {
+      instanceId: "whiteboard",
+      status: "ready",
+      source: "requested",
+      surface: {
+        layout: { type: "grid", columns: 0 },
+        components: [{
+          id: "static-result",
+          component: CALCULIX_COMPONENT_KEYS.staticResult,
+        }],
+      },
+    },
+  });
+  assertEquals(malformed.ok, false);
+  if (!malformed.ok) {
+    assertStringIncludes(
+      malformed.message,
+      "host-selected component surface is invalid",
+    );
+  }
+
+  assertEquals(resolveCalculixSurface({}), {
+    ok: true,
+    surface: CALCULIX_RESULTS_SURFACE,
+  });
+});
+
+Deno.test("compact default source does not import invented verdict or bound widgets", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./components.tsx", import.meta.url),
+  );
+  assertEquals(source.includes("LimitGauge"), false);
+  assertEquals(source.includes("ElementVerdict"), false);
+});
+
 Deno.test({
-  name: "CalculiX whole view renders a neutral documentary result",
+  name: "CalculiX default surface is one documentary SemanticElement card",
   permissions: { read: true, env: true, run: true },
   async fn() {
-    const documentModule = await import("linkedom");
-    const dom = documentModule.parseHTML(
-      "<html><body><div id=root></div></body></html>",
+    await withMountedSurface(
+      await digitalThreadResult(),
+      {},
+      async (root, mounted) => {
+        assertEquals(root.querySelectorAll("[data-component]").length, 1);
+        assertEquals(
+          root.querySelector("[data-component]")?.getAttribute(
+            "data-component",
+          ),
+          CALCULIX_COMPONENT_KEYS.staticResult,
+        );
+        const card = root.querySelector(".mcp-view-semantic-element");
+        assertEquals(card?.getAttribute("data-density"), "card");
+        assertEquals(card?.getAttribute("data-semantic-domain"), "calculix");
+        assertEquals(
+          card?.getAttribute("data-semantic-kind"),
+          "digital-thread-static-proof",
+        );
+        assertEquals(card?.hasAttribute("data-tone"), false);
+        assertEquals(
+          root.querySelector("[data-element-slot=verdict]"),
+          null,
+        );
+        assertEquals(root.querySelector(".mcp-view-limit-gauge"), null);
+        assertEquals(
+          root.querySelector(".mcp-view-artifact-row-verification"),
+          null,
+        );
+        assertStringIncludes(
+          root.textContent ?? "",
+          "Digital Thread · documentary result",
+        );
+        assertStringIncludes(root.textContent ?? "", "Documentary");
+        assertStringIncludes(
+          root.textContent ?? "",
+          "verify.run-fea-static-proof@3",
+        );
+        assertStringIncludes(
+          root.textContent ?? "",
+          "thread://project-1/artifacts/bracket.step",
+        );
+        assertEquals(root.textContent?.includes("CalculiX run ID"), false);
+        assertEquals(root.textContent?.includes("Mesh summary"), false);
+        assertEquals(root.querySelectorAll('[data-tone="success"]').length, 0);
+        assertNoInventedVerdict(root);
+
+        await mounted.dispose();
+        assertEquals(root.textContent, "");
+      },
     );
-    const previousDocument = globalThis.document;
-    Object.defineProperty(globalThis, "document", {
-      configurable: true,
-      value: dom.document,
-    });
-    try {
-      const root = dom.document.getElementById(
-        "root",
-      ) as unknown as HTMLElement;
-      const state = await displayStateFromViewerSession(
-        await digitalThreadSession(),
-      );
-      if (state.kind !== "result") throw new Error("expected result state");
-      const mounted = await mountComponentSurface({
-        root,
-        registry: CALCULIX_COMPONENT_REGISTRY,
-        data: state.result,
-        appContext: componentContext,
-        hostContext: {},
-        surface: CALCULIX_RESULTS_SURFACE,
-      });
-
-      assertEquals(root.querySelectorAll("[data-component]").length, 4);
-      assertStringIncludes(
-        root.textContent,
-        "Digital Thread · documentary result",
-      );
-      assertStringIncludes(root.textContent, "Documentary");
-      assertStringIncludes(
-        root.textContent,
-        "verify.run-fea-static-proof@3",
-      );
-      assertEquals(root.textContent.includes("CalculiX run ID"), false);
-      assertEquals(root.querySelectorAll('[data-tone="success"]').length, 0);
-
-      await mounted.dispose();
-      assertEquals(root.textContent, "");
-    } finally {
-      Object.defineProperty(globalThis, "document", {
-        configurable: true,
-        value: previousDocument,
-      });
-    }
   },
 });
+
+Deno.test({
+  name: "ordinary static-solve card has no ArtifactRow URI and no verdict",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, {}, (root) => {
+      assertEquals(root.querySelector(".mcp-view-artifact-row"), null);
+      assertEquals(
+        root.querySelector("[data-element-slot=verdict]"),
+        null,
+      );
+      assertEquals(root.querySelector(".mcp-view-limit-gauge"), null);
+      assertStringIncludes(root.textContent ?? "", "STEP source");
+      assertStringIncludes(root.textContent ?? "", "/exports/bracket.step");
+      assertStringIncludes(root.textContent ?? "", "Maximum displacement");
+      assertStringIncludes(root.textContent ?? "", "mm");
+      assertStringIncludes(root.textContent ?? "", "MPa");
+      assertNoInventedVerdict(root);
+    });
+  },
+});
+
+Deno.test({
+  name: "recorded static-solve card uses ArtifactRow only for the STEP URI",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    const fixture = await recordedFixture();
+    await withMountedSurface(
+      {
+        ...recordedDocument,
+        run: fixture.lookup.run,
+      },
+      {},
+      (root) => {
+        assertEquals(root.querySelectorAll(".mcp-view-artifact-row").length, 1);
+        assertEquals(
+          root.querySelectorAll("article.mcp-view-artifact-row").length,
+          1,
+        );
+        assertEquals(root.querySelector("button.mcp-view-artifact-row"), null);
+        assertEquals(
+          root.querySelector(".mcp-view-artifact-row-verification"),
+          null,
+        );
+        assertStringIncludes(
+          root.textContent ?? "",
+          `${RUN_URI}/input.step`,
+        );
+        assertStringIncludes(root.textContent ?? "", "CalculiX run ID");
+        assertEquals(
+          root.querySelector("[data-element-slot=verdict]"),
+          null,
+        );
+        assertNoInventedVerdict(root);
+      },
+    );
+  },
+});
+
+Deno.test({
+  name: "host-selected surface still mounts the four detail components",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, {
+      [CASYS_SURFACE_CONTEXT_KEY]: {
+        instanceId: "whiteboard",
+        status: "ready",
+        source: "requested",
+        surface: {
+          layout: { type: "grid", columns: 2, gap: "md" },
+          components: [
+            {
+              id: "solve-metrics",
+              component: CALCULIX_COMPONENT_KEYS.solveMetrics,
+            },
+            {
+              id: "mesh-summary",
+              component: CALCULIX_COMPONENT_KEYS.meshSummary,
+            },
+            {
+              id: "constraints",
+              component: CALCULIX_COMPONENT_KEYS.constraints,
+            },
+            {
+              id: "displacement-details",
+              component: CALCULIX_COMPONENT_KEYS.displacementDetails,
+            },
+          ],
+        },
+      },
+    }, (root) => {
+      assertEquals(root.querySelectorAll("[data-component]").length, 4);
+      assertEquals(
+        [...root.querySelectorAll("[data-component]")].map((node) =>
+          node.getAttribute("data-component")
+        ),
+        [
+          CALCULIX_COMPONENT_KEYS.solveMetrics,
+          CALCULIX_COMPONENT_KEYS.meshSummary,
+          CALCULIX_COMPONENT_KEYS.constraints,
+          CALCULIX_COMPONENT_KEYS.displacementDetails,
+        ],
+      );
+      assertEquals(root.querySelector(".mcp-view-semantic-element"), null);
+      assertStringIncludes(root.textContent ?? "", "Mesh summary");
+      assertStringIncludes(root.textContent ?? "", "Boundary conditions");
+      assertStringIncludes(root.textContent ?? "", "Extrema details");
+    });
+  },
+});
+
+async function withMountedSurface(
+  data: StaticResultsViewData,
+  hostContext: Record<string, unknown>,
+  run: (
+    root: HTMLElement,
+    mounted: Awaited<ReturnType<typeof mountComponentSurface>>,
+  ) => void | Promise<void>,
+): Promise<void> {
+  const documentModule = await import("linkedom");
+  const dom = documentModule.parseHTML(
+    "<html><body><div id=root></div></body></html>",
+  );
+  const previousDocument = globalThis.document;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: dom.document,
+  });
+  try {
+    const root = dom.document.getElementById(
+      "root",
+    ) as unknown as HTMLElement;
+    const mounted = await mountComponentSurface({
+      root,
+      registry: CALCULIX_COMPONENT_REGISTRY,
+      data,
+      appContext: componentContext,
+      hostContext: hostContext as PreactSurfaceContext<
+        StaticResultsViewData
+      >["hostContext"],
+    });
+    try {
+      await run(root, mounted);
+    } finally {
+      await mounted.dispose();
+    }
+  } finally {
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: previousDocument,
+    });
+  }
+}
+
+function assertNoInventedVerdict(root: HTMLElement): void {
+  const text = (root.textContent ?? "").toLowerCase();
+  for (const claim of ["pass", "fail", "safe", "verified", "adequate"]) {
+    assertEquals(
+      text.includes(claim),
+      false,
+      `compact surface must not invent ${claim}`,
+    );
+  }
+}
+
+async function digitalThreadResult(): Promise<StaticResultsViewData> {
+  const state = await displayStateFromViewerSession(
+    await digitalThreadSession(),
+  );
+  if (state.kind !== "result") throw new Error("expected result state");
+  return state.result;
+}
 
 async function recordedFixture() {
   const resultText = JSON.stringify(recordedDocument);

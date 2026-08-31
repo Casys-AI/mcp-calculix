@@ -10,15 +10,22 @@ import {
   type PreactSurfaceContext,
 } from "@casys/mcp-view-components/preact";
 import {
+  ArtifactRow,
   Badge,
   Card,
+  ElementBody,
+  ElementIdent,
+  ElementProvenance,
+  ElementReading,
   KeyValueList,
   MetricGrid,
+  SemanticElement,
   StateMessage,
 } from "@casys/mcp-view-components/preact/components";
 import type { StaticResultsViewData } from "./model.ts";
 
 export const CALCULIX_COMPONENT_KEYS = {
+  staticResult: "calculix.static-result",
   solveMetrics: "calculix.solve-metrics",
   meshSummary: "calculix.mesh-summary",
   constraints: "calculix.constraints",
@@ -28,6 +35,68 @@ export const CALCULIX_COMPONENT_KEYS = {
 type CalculixComponentProps = PreactSurfaceComponentProps<
   StaticResultsViewData
 >;
+
+const StaticResult = ({ data }: CalculixComponentProps) => (
+  <SemanticElement
+    reference={{
+      domain: "calculix",
+      kind: data.kind,
+      id: resultIdentity(data),
+      basisFingerprint: data.inputArtifact.sha256,
+    }}
+    density="card"
+    ident={
+      <ElementIdent
+        marker={resultBadge(data)}
+        label={resultTitle(data)}
+        detail={resultEyebrow(data)}
+      />
+    }
+    reading={[
+      <ElementReading
+        key="max-displacement"
+        label="Maximum displacement"
+        value={formatNumber(data.metrics.maxDisplacement.value)}
+        unit={data.metrics.maxDisplacement.unit}
+        detail={`Node ${data.metrics.maxDisplacement.nodeId}`}
+      />,
+      <ElementReading
+        key="max-von-mises"
+        label="Maximum von Mises"
+        value={formatNumber(data.metrics.maxVonMises.value)}
+        unit={data.metrics.maxVonMises.unit}
+        detail={`Element ${data.metrics.maxVonMises.elementId}`}
+      />,
+    ]}
+    body={
+      <ElementBody>
+        {"uri" in data.inputArtifact
+          ? (
+            <ArtifactRow
+              kind="STEP"
+              label="STEP resource"
+              uri={data.inputArtifact.uri}
+              fingerprint={{
+                algorithm: "sha256",
+                digest: data.inputArtifact.sha256,
+              }}
+              sizeLabel={`${formatInteger(data.inputArtifact.bytes)} bytes`}
+            />
+          )
+          : (
+            <KeyValueList
+              items={[{
+                id: "input-source",
+                label: "STEP source",
+                value: data.inputArtifact.sourcePath,
+              }]}
+            />
+          )}
+      </ElementBody>
+    }
+    provenance={resultProvenance(data)}
+  />
+);
 
 const SolveMetrics = ({ data }: CalculixComponentProps) => (
   <Card
@@ -186,25 +255,13 @@ const ExtremaDetails = ({ data }: CalculixComponentProps) => (
   </Card>
 );
 
-/** Internal layout owned by the whole-view CalculiX App. */
+/** Standalone default: one bounded static-result card, not a 4-pane dashboard. */
 export const CALCULIX_RESULTS_SURFACE = defineComponentSurface({
-  layout: { type: "grid", columns: 2, gap: "md" },
+  layout: { type: "stack", gap: "sm" },
   components: [
     {
-      id: "solve-metrics",
-      component: CALCULIX_COMPONENT_KEYS.solveMetrics,
-    },
-    {
-      id: "mesh-summary",
-      component: CALCULIX_COMPONENT_KEYS.meshSummary,
-    },
-    {
-      id: "constraints",
-      component: CALCULIX_COMPONENT_KEYS.constraints,
-    },
-    {
-      id: "displacement-details",
-      component: CALCULIX_COMPONENT_KEYS.displacementDetails,
+      id: "static-result",
+      component: CALCULIX_COMPONENT_KEYS.staticResult,
     },
   ],
 });
@@ -215,6 +272,14 @@ export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
   PreactSurfaceContext<StaticResultsViewData>
 >({
   components: {
+    [CALCULIX_COMPONENT_KEYS.staticResult]: definePreactComponent(
+      {
+        title: "Static result",
+        description:
+          "Bounded static-solve identity and extrema readings, with attested STEP identity when a URI is present.",
+      },
+      StaticResult,
+    ),
     [CALCULIX_COMPONENT_KEYS.solveMetrics]: definePreactComponent(
       {
         title: "Static solve metrics",
@@ -289,6 +354,37 @@ function resultBadgeTone(
   data: StaticResultsViewData,
 ): "neutral" | "info" {
   return data.kind === "static-solve" ? "info" : "neutral";
+}
+
+function resultIdentity(data: StaticResultsViewData): string {
+  if (data.kind === "digital-thread-static-proof") return data.authority.runId;
+  if (data.kind === "static-solve-recorded") return data.run.runId;
+  return data.inputArtifact.sha256;
+}
+
+function resultProvenance(data: StaticResultsViewData) {
+  if (data.kind === "digital-thread-static-proof") {
+    return (
+      <ElementProvenance
+        label="Authority"
+        value={data.authority.operation}
+      />
+    );
+  }
+  if (data.kind === "static-solve-recorded") {
+    return (
+      <ElementProvenance
+        label="CalculiX run ID"
+        value={data.run.runId}
+      />
+    );
+  }
+  return (
+    <ElementProvenance
+      label="STEP SHA-256"
+      value={data.inputArtifact.sha256}
+    />
+  );
 }
 
 function provenanceItems(data: StaticResultsViewData): readonly {

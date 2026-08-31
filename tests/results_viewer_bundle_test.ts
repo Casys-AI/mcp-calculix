@@ -87,10 +87,13 @@ Deno.test("built CalculiX viewer contains its App-owned whole view", async () =>
   const html = await Deno.readTextFile(viewer);
 
   assert(html.includes("io.casys.mcp.surface/v1"));
+  assert(html.includes("io.casys.mcp.view-components/v1"));
+  assert(html.includes("calculix.static-result"));
   assert(html.includes("calculix.solve-metrics"));
   assert(html.includes("calculix.mesh-summary"));
   assert(html.includes("calculix.constraints"));
   assert(html.includes("calculix.displacement-details"));
+  assert(html.includes("mcp-view-semantic-element"));
   assert(html.includes("viewer.session.apply"));
   assert(html.includes("io.casys.mcp-calculix.results"));
   assert(html.includes("whole-view"));

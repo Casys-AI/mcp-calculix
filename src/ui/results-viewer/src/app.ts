@@ -5,7 +5,12 @@ import {
   defineView,
 } from "@casys/mcp-view";
 import {
+  activeComponentSurface,
+  applySurfaceContext,
+  componentCatalogCapabilities,
+  type ComponentSurface,
   installMcpViewTheme,
+  type McpViewHostContext,
   mountComponentSurface,
   type MountedComponentSurface,
 } from "@casys/mcp-view-components";
@@ -14,10 +19,7 @@ import {
   CALCULIX_VIEWER_SESSION_SCHEMA,
   VIEWER_SESSION_APPLY_ACTION,
 } from "../../../viewer-session.ts";
-import {
-  CALCULIX_COMPONENT_REGISTRY,
-  CALCULIX_RESULTS_SURFACE,
-} from "./components.tsx";
+import { CALCULIX_COMPONENT_REGISTRY } from "./components.tsx";
 import {
   type DisplayState,
   displayStateFromToolResult,
@@ -42,6 +44,8 @@ export async function startCalculixResultsApp(
   let mounted: MountedComponentSurface | undefined;
   let pendingMount: Promise<void> | undefined;
   let mountGeneration = 0;
+  let currentResult: StaticResultsViewData | undefined;
+  let removeHostContextListener: (() => void) | undefined;
 
   const reportError = (error: unknown): void => {
     console.error("[mcp-calculix] Results projection failed", error);
@@ -85,7 +89,10 @@ export async function startCalculixResultsApp(
   };
 
   const status = defineView<ResultsViewerState, DisplayState, DisplayState>({
-    onEnter: (_context, next) => next,
+    onEnter: (_context, next) => {
+      currentResult = undefined;
+      return next;
+    },
     render(_context, next) {
       return renderDisplayState(next);
     },
@@ -97,10 +104,22 @@ export async function startCalculixResultsApp(
     StaticResultsViewData,
     StaticResultsViewData
   >({
-    onEnter: (_context, data) => data,
+    onEnter: (_context, data) => {
+      currentResult = data;
+      return data;
+    },
     render(context, data) {
       const shell = document.createElement("div");
       shell.className = "calculix-component-surface";
+      const resolution = resolveCalculixSurface(context.hostContext);
+      if (!resolution.ok) {
+        shell.replaceChildren(message(
+          resolution.message,
+          "danger",
+        ));
+        return shell;
+      }
+      const selected = resolution.surface;
 
       const generation = ++mountGeneration;
       pendingMount = mountComponentSurface({
@@ -109,7 +128,7 @@ export async function startCalculixResultsApp(
         data,
         appContext: context,
         hostContext: context.hostContext,
-        surface: CALCULIX_RESULTS_SURFACE,
+        surface: selected,
       }).then(async (next) => {
         if (generation !== mountGeneration) {
           await next.dispose();
@@ -138,6 +157,11 @@ export async function startCalculixResultsApp(
       initialView: "status",
       initialArgs: { kind: "loading" } satisfies DisplayState,
       initialState: state,
+      capabilities: {
+        experimental: componentCatalogCapabilities(
+          CALCULIX_COMPONENT_REGISTRY,
+        ),
+      },
       onToolInputPartial: async (_params, app) => {
         await app.navigate(
           "status",
@@ -162,6 +186,9 @@ export async function startCalculixResultsApp(
         }
       },
       onTeardown: async () => {
+        removeHostContextListener?.();
+        removeHostContextListener = undefined;
+        currentResult = undefined;
         disposeSessionChannel();
         await disposeSurface();
       },
@@ -171,9 +198,51 @@ export async function startCalculixResultsApp(
     throw error;
   }
 
+  const onHostContextChanged = (): void => {
+    applySurfaceContext(handle.ctx.hostContext, document.documentElement);
+    if (!currentResult || handle.currentView !== "surface") return;
+    void handle.navigate("surface", currentResult).catch(reportError);
+  };
+  handle.ctx.app.addEventListener("hostcontextchanged", onHostContextChanged);
+  applySurfaceContext(handle.ctx.hostContext, document.documentElement);
+  removeHostContextListener = () => {
+    handle.ctx.app.removeEventListener(
+      "hostcontextchanged",
+      onHostContextChanged,
+    );
+  };
+
   await sessionReceiver.activate((next) =>
     showDisplayState(handle.navigate, next)
   );
+}
+
+export type CalculixSurfaceResolution =
+  | { readonly ok: true; readonly surface: ComponentSurface }
+  | { readonly ok: false; readonly message: string };
+
+/** Keep the active route mounted when a host sends a malformed surface. */
+export function resolveCalculixSurface(
+  hostContext: McpViewHostContext,
+): CalculixSurfaceResolution {
+  try {
+    const surface = activeComponentSurface(
+      CALCULIX_COMPONENT_REGISTRY,
+      hostContext,
+    );
+    return surface ? { ok: true, surface } : {
+      ok: false,
+      message:
+        "This App exposes components and requires a host-selected surface.",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `The host-selected component surface is invalid: ${
+        errorMessage(error)
+      }`,
+    };
+  }
 }
 
 async function showDisplayState(
