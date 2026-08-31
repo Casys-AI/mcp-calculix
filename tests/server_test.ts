@@ -131,7 +131,11 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     );
     const runGet = tools.find((item) => item.name === "calculix_run_get");
     assert(runGet);
-    assertEquals(runGet._meta, undefined);
+    assertEquals(
+      ((runGet._meta as Record<string, unknown>).ui as Record<string, unknown>)
+        .resourceUri,
+      "ui://mcp-calculix/results-viewer",
+    );
 
     const called = await rpc(url, "tools/call", {
       name: "calculix_solve_static",

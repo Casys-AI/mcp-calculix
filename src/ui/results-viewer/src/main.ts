@@ -1,26 +1,9 @@
-import { startPreactSurfaceApp } from "@casys/mcp-view/preact";
-import { CALCULIX_COMPONENT_REGISTRY } from "./components.tsx";
-import { parseStaticSolve, type StaticSolveResult } from "./model.ts";
+import { startCalculixResultsApp } from "./app.ts";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("The CalculiX results viewer root is missing.");
 
-void startPreactSurfaceApp<StaticSolveResult>({
-  root,
-  info: { name: "CalculiX Static Results", version: "0.8.3" },
-  registry: CALCULIX_COMPONENT_REGISTRY,
-  surfaceClassName: "calculix-component-surface",
-  loadingLabel: "Receiving static solve observations…",
-  emptyLabel: "CalculiX returned no valid static-solve result.",
-  validate: (value): value is StaticSolveResult => {
-    try {
-      parseStaticSolve(value);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-}).catch((error) => {
+void startCalculixResultsApp(root).catch((error) => {
   const state = document.createElement("div");
   state.className = "mcp-view-state";
   state.dataset.tone = "danger";

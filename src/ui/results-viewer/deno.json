@@ -1,7 +1,7 @@
 {
+  "lock": false,
   "minimumDependencyAge": {
-    "age": "P1D",
-    "exclude": ["jsr:@casys/mcp-view"]
+    "age": "P1D"
   },
   "compilerOptions": {
     "jsx": "react-jsx",
@@ -16,8 +16,6 @@
     ]
   },
   "imports": {
-    "@casys/mcp-view": "jsr:@casys/mcp-view@0.7.0",
-    "@casys/mcp-view/preact": "jsr:@casys/mcp-view@0.7.0/preact",
     "linkedom": "npm:linkedom@0.18.12",
     "preact": "npm:preact@^10.28.3",
     "preact/jsx-runtime": "npm:preact@^10.28.3/jsx-runtime",
@@ -26,8 +24,8 @@
   },
   "tasks": {
     "build": "deno run -A build.ts",
-    "check": "deno check src/main.ts",
-    "test": "deno test --allow-read src",
-    "fmt": "deno fmt --check index.html build.ts src"
+    "test": "deno run -A test.ts",
+    "check:bundle": "deno run -A check-bundle.ts",
+    "fmt": "deno fmt --check index.html build.ts check-bundle.ts local-modules.ts test.ts src"
   }
 }

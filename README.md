@@ -141,9 +141,18 @@ deno run --allow-all jsr:@casys/mcp-calculix@0.8.3/server --port=3015
 From a source tree:
 
 ```bash
+export MCP_VIEW_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view
+export MCP_VIEW_CONTRACTS_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view-contracts
+export MCP_VIEW_COMPONENTS_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view-components
 deno task build:ui
 deno task serve
 ```
+
+Viewer source builds are intentionally local and fail closed. All three roots
+must be explicit split packages with matching package identities; there is no
+fallback to a published monolithic `mcp-view` release. Runtime consumers use
+the already-versioned single-file viewer resource and do not need these source
+packages.
 
 The native server binds `127.0.0.1` by default. `--port` and `--hostname`
 configure that entry point; `MCP_PORT` and `MCP_HOSTNAME` supply the same values
@@ -489,12 +498,16 @@ the caller-supplied location. Use `inputArtifact.sha256`, not either mutable or
 ephemeral path, as the input identity.
 
 The server publishes the MCP App at `ui://mcp-calculix/results-viewer`.
-`calculix_solve_static` and `calculix_solve_static_recorded` link it in their
-tool metadata. The viewer parser accepts both ordinary and recorded-static `2.0`
-results. `calculix_run_get` does not attach that viewer because its recovery
-result shape differs. It displays constraints, mesh counts, extrema,
-displacement vector, and the relevant node/element IDs without classifying the
-observations. Its composable catalog is `io.casys.mcp.view-components/v1`:
+`calculix_solve_static`, `calculix_solve_static_recorded`, and the read-only
+`calculix_run_get` link it in their tool metadata. The viewer parser accepts
+both ordinary and recorded-static `2.0` results. For a completed run lookup, the
+App reads the exact recorded `result.json` resource, checks its URI, media type,
+byte count and SHA-256 against the complete run ledger, and only then projects
+the observations. It never calls a solve tool. Non-terminal recovery states stay
+visibly `unresolved` or `unavailable` rather than being replaced with inferred
+data. The viewer displays constraints, mesh counts, extrema, displacement
+vector, and the relevant node/element IDs without classifying the observations.
+Its composable catalog is `io.casys.mcp.view-components/v1`:
 
 | Component                       | Content                                          |
 | ------------------------------- | ------------------------------------------------ |
@@ -580,6 +593,26 @@ separate SysON evaluation. It does **not** call this MCP server and does not
 claim `mcp-calculix` provenance. A successful fleet solve is therefore not a
 product static `@3` proof, and an isolated `@3` result must not be relabelled as
 a fleet MCP run.
+
+The App-owned recorded-session contract is
+`io.casys.mcp-calculix.recorded-static-proof-session/1.0`, delivered unchanged
+through the read-only `viewer.session.apply` action. Its provenance union keeps
+an exact `verify.run-fea-static-proof@3` projection distinct from a recorded
+`calculix_solve_static_recorded` run, and its projection status remains
+`available`, `unresolved`, or `unavailable` without fallback inference. The App
+recomputes `basis.sessionFingerprint` over the canonical subdocument
+`{schemaVersion, kind, basis, anchor, provenance, projection}`. Inside that
+subdocument, `basis` contains `projectId`, `projectRevision`, `subjectId`, and
+`thread`; only the self-referential `sessionFingerprint` is omitted. Canonical
+JSON uses recursively sorted object keys and finite numbers, and rejects sparse
+or adorned arrays. Recorded Thread artifact fingerprints keep their original
+persisted-artifact meaning. The exported `CALCULIX_VIEW_APP_MANIFEST` declares
+one App-owned whole-view resource, its result schemas, accepted action, and
+session schema; it does not advertise a host-selectable component catalog.
+`deno task build:ui`, the UI part of `deno task test`, and the release bundle
+gate require the three explicit local package roots shown above. They validate
+the package names and entry points before loading code, without changing any
+released dependency version.
 
 ## Honest limits in 0.8.3
 
@@ -685,6 +718,8 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 ## Development
 
 ```bash
+# Set MCP_VIEW_LOCAL_ROOT, MCP_VIEW_CONTRACTS_LOCAL_ROOT, and
+# MCP_VIEW_COMPONENTS_LOCAL_ROOT as shown under "Native Deno run".
 deno task build:ui
 deno task release:check
 deno task test:native
@@ -692,11 +727,13 @@ deno task test:native
 
 `deno task release:check` runs formatting, type checking, linting, wire/contract
 tests, recorded-run recovery tests, parser fixtures, native stdio tests, and
-viewer-model tests. Native end-to-end Gmsh/CalculiX tests are opt-in so a
-checkout without solver binaries still verifies the pure and wire contracts. Tag
-workflows install both `gmsh` and `calculix-ccx`, run `deno task test:native`,
-and run a native static solve smoke inside the built release image before
-publishing it.
+viewer-model tests. It also rebuilds the viewer from the audited local split
+packages into a temporary path and compares that output byte-for-byte with the
+versioned HTML, so source or shared-theme drift fails the release gate. Native
+end-to-end Gmsh/CalculiX tests are opt-in so a checkout without solver binaries
+still verifies the pure and wire contracts. Tag workflows install both `gmsh`
+and `calculix-ccx`, run `deno task test:native`, and run a native static solve
+smoke inside the built release image before publishing it.
 
 Key files:
 

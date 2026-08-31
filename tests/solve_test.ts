@@ -160,7 +160,7 @@ Deno.test("calculix_solve_static declares a closed MCP App static-solve contract
   );
 });
 
-Deno.test("calculix_solve_static_recorded wires the results viewer; calculix_run_get does not", async () => {
+Deno.test("recorded solve and read-only run lookup wire the results viewer", async () => {
   const runsDirectory = await Deno.makeTempDir({
     prefix: "calculix-viewer-meta-",
   });
@@ -176,8 +176,10 @@ Deno.test("calculix_solve_static_recorded wires the results viewer; calculix_run
       recorded?._meta?.ui?.resourceUri,
       CALCULIX_RESULTS_VIEWER_URI,
     );
-    assertEquals(runGet?._meta?.ui?.resourceUri, undefined);
-    assertEquals(runGet?._meta, undefined);
+    assertEquals(
+      runGet?._meta?.ui?.resourceUri,
+      CALCULIX_RESULTS_VIEWER_URI,
+    );
   } finally {
     await Deno.remove(runsDirectory, { recursive: true });
   }

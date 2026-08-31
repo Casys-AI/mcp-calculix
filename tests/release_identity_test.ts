@@ -77,17 +77,27 @@ Deno.test(
       expected,
     );
 
-    const viewerSource = await Deno.readTextFile(
-      new URL("../src/ui/results-viewer/src/main.ts", import.meta.url),
+    const manifestSource = await Deno.readTextFile(
+      new URL("../src/viewer-session.ts", import.meta.url),
     );
     assertReleaseVersion(
-      "results viewer source",
+      "results viewer manifest",
       capturedVersion(
-        viewerSource,
-        /info:\s*\{\s*name:\s*"CalculiX Static Results",\s*version:\s*"([^"]+)"/,
-        "results viewer source identity",
+        manifestSource,
+        /id:\s*"io\.casys\.mcp-calculix\.results";\s*readonly title:[\s\S]*?readonly version:\s*"([^"]+)"/,
+        "results viewer manifest identity",
       ),
       expected,
+    );
+    const viewerSource = await Deno.readTextFile(
+      new URL("../src/ui/results-viewer/src/app.ts", import.meta.url),
+    );
+    assert(
+      viewerSource.includes("name: CALCULIX_VIEW_APP_MANIFEST.app.id") &&
+        viewerSource.includes(
+          "version: CALCULIX_VIEW_APP_MANIFEST.app.version",
+        ),
+      "results viewer appInfo must derive its exact id and version from the manifest",
     );
 
     const viewerBundle = await Deno.readTextFile(
@@ -97,7 +107,7 @@ Deno.test(
       "generated results viewer bundle",
       capturedVersion(
         viewerBundle,
-        /info:\{name:"CalculiX Static Results",version:"([^"]+)"\}/,
+        /app:\{id:"io\.casys\.mcp-calculix\.results",title:"CalculiX Static Results",version:"([^"]+)"\}/,
         "generated results viewer bundle identity",
       ),
       expected,

@@ -1,17 +1,22 @@
 /** @jsxImportSource preact */
 
-import { defineComponentRegistry } from "@casys/mcp-view";
+import {
+  defineComponentRegistry,
+  defineComponentSurface,
+} from "@casys/mcp-view-components";
+import {
+  definePreactComponent,
+  type PreactSurfaceComponentProps,
+  type PreactSurfaceContext,
+} from "@casys/mcp-view-components/preact";
 import {
   Badge,
   Card,
-  definePreactComponent,
   KeyValueList,
   MetricGrid,
-  type PreactSurfaceComponentProps,
-  type PreactSurfaceContext,
   StateMessage,
-} from "@casys/mcp-view/preact";
-import type { StaticSolveResult } from "./model.ts";
+} from "@casys/mcp-view-components/preact/components";
+import type { StaticResultsViewData } from "./model.ts";
 
 export const CALCULIX_COMPONENT_KEYS = {
   solveMetrics: "calculix.solve-metrics",
@@ -20,13 +25,15 @@ export const CALCULIX_COMPONENT_KEYS = {
   displacementDetails: "calculix.displacement-details",
 } as const;
 
-type CalculixComponentProps = PreactSurfaceComponentProps<StaticSolveResult>;
+type CalculixComponentProps = PreactSurfaceComponentProps<
+  StaticResultsViewData
+>;
 
 const SolveMetrics = ({ data }: CalculixComponentProps) => (
   <Card
-    title="Static solve metrics"
-    eyebrow="Static solve"
-    actions={<Badge tone="success">Solved</Badge>}
+    title={resultTitle(data)}
+    eyebrow={resultEyebrow(data)}
+    actions={<Badge tone={resultBadgeTone(data)}>{resultBadge(data)}</Badge>}
   >
     <MetricGrid
       items={[
@@ -137,6 +144,7 @@ const ExtremaDetails = ({ data }: CalculixComponentProps) => (
   <Card title="Extrema details" eyebrow="Result provenance">
     <KeyValueList
       items={[
+        ...provenanceItems(data),
         {
           id: "input-source",
           label: "sourcePath" in data.inputArtifact
@@ -178,10 +186,33 @@ const ExtremaDetails = ({ data }: CalculixComponentProps) => (
   </Card>
 );
 
-/** Small CalculiX-owned components selectable by an agent-authored surface. */
+/** Internal layout owned by the whole-view CalculiX App. */
+export const CALCULIX_RESULTS_SURFACE = defineComponentSurface({
+  layout: { type: "grid", columns: 2, gap: "md" },
+  components: [
+    {
+      id: "solve-metrics",
+      component: CALCULIX_COMPONENT_KEYS.solveMetrics,
+    },
+    {
+      id: "mesh-summary",
+      component: CALCULIX_COMPONENT_KEYS.meshSummary,
+    },
+    {
+      id: "constraints",
+      component: CALCULIX_COMPONENT_KEYS.constraints,
+    },
+    {
+      id: "displacement-details",
+      component: CALCULIX_COMPONENT_KEYS.displacementDetails,
+    },
+  ],
+});
+
+/** Private registry used to render the App-owned whole view. */
 export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
-  StaticSolveResult,
-  PreactSurfaceContext<StaticSolveResult>
+  StaticResultsViewData,
+  PreactSurfaceContext<StaticResultsViewData>
 >({
   components: {
     [CALCULIX_COMPONENT_KEYS.solveMetrics]: definePreactComponent(
@@ -215,27 +246,7 @@ export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
       ExtremaDetails,
     ),
   },
-  defaultSurface: {
-    layout: { type: "grid", columns: 2, gap: "md" },
-    components: [
-      {
-        id: "solve-metrics",
-        component: CALCULIX_COMPONENT_KEYS.solveMetrics,
-      },
-      {
-        id: "mesh-summary",
-        component: CALCULIX_COMPONENT_KEYS.meshSummary,
-      },
-      {
-        id: "constraints",
-        component: CALCULIX_COMPONENT_KEYS.constraints,
-      },
-      {
-        id: "displacement-details",
-        component: CALCULIX_COMPONENT_KEYS.displacementDetails,
-      },
-    ],
-  },
+  defaultSurface: CALCULIX_RESULTS_SURFACE,
 });
 
 function formatNumber(value: number): string {
@@ -248,4 +259,74 @@ function formatInteger(value: number): string {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(
     value,
   );
+}
+
+function resultTitle(data: StaticResultsViewData): string {
+  return data.kind === "digital-thread-static-proof"
+    ? "Recorded static result metrics"
+    : data.kind === "static-solve-recorded"
+    ? "Recorded static-solve metrics"
+    : "Static solve metrics";
+}
+
+function resultEyebrow(data: StaticResultsViewData): string {
+  return data.kind === "digital-thread-static-proof"
+    ? "Digital Thread · documentary result"
+    : data.kind === "static-solve-recorded"
+    ? "CalculiX run ledger"
+    : "Static solve";
+}
+
+function resultBadge(data: StaticResultsViewData): string {
+  return data.kind === "digital-thread-static-proof"
+    ? "Documentary"
+    : data.kind === "static-solve-recorded"
+    ? "Recorded"
+    : "Solver result";
+}
+
+function resultBadgeTone(
+  data: StaticResultsViewData,
+): "neutral" | "info" {
+  return data.kind === "static-solve" ? "info" : "neutral";
+}
+
+function provenanceItems(data: StaticResultsViewData): readonly {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+}[] {
+  if (data.kind === "digital-thread-static-proof") {
+    return [
+      {
+        id: "authority",
+        label: "Authority",
+        value: data.authority.operation,
+      },
+      {
+        id: "persisted-result-sha256",
+        label: "Persisted result SHA-256",
+        value: data.authority.resultArtifact.fingerprint,
+      },
+    ];
+  }
+  if (data.kind === "static-solve-recorded") {
+    return [
+      {
+        id: "run-id",
+        label: "CalculiX run ID",
+        value: data.run.runId,
+      },
+      {
+        id: "request-sha256",
+        label: "Request SHA-256",
+        value: data.run.requestSha256,
+      },
+    ];
+  }
+  return [{
+    id: "authority",
+    label: "Authority",
+    value: "Direct mcp-calculix result",
+  }];
 }

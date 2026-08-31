@@ -8,6 +8,10 @@ body {
   padding: 0.65rem;
 }
 
+.calculix-viewer-state {
+  margin: 0.65rem;
+}
+
 .calculix-selection-counts,
 .calculix-fixed-selections {
   margin-top: 0.55rem;

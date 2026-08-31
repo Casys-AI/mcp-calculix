@@ -185,3 +185,32 @@ export type {
   ValidatedRecordedStaticRequest,
 } from "./src/runs.ts";
 export { CalculixRunOutcomeUnknownError } from "./src/runs.ts";
+
+export {
+  CALCULIX_RESULT_SCHEMA_IDS,
+  CALCULIX_RESULTS_VIEWER_URI,
+  CALCULIX_VIEW_APP_MANIFEST,
+  CALCULIX_VIEWER_SESSION_KIND,
+  CALCULIX_VIEWER_SESSION_SCHEMA,
+  calculixRecordedSessionFingerprint,
+  parseCalculixIsolatedStaticResult,
+  parseCalculixRecordedResultDocument,
+  parseCalculixRecordedRun,
+  parseCalculixRecordedStaticResult,
+  parseCalculixViewerSession,
+  VIEW_APP_MANIFEST_SCHEMA,
+  VIEWER_SESSION_APPLY_ACTION,
+} from "./src/viewer-session.ts";
+export type {
+  CalculixIsolatedStaticResult,
+  CalculixRecordedArtifact,
+  CalculixRecordedRun,
+  CalculixRecordedStaticResult,
+  CalculixStaticObservations,
+  CalculixViewAppManifest,
+  CalculixViewerSession,
+  CalculixViewerSessionAnchor,
+  CalculixViewerSessionBasis,
+  CalculixViewerSessionProjection,
+  CalculixViewerSessionProvenance,
+} from "./src/viewer-session.ts";

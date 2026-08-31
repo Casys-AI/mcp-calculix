@@ -55,8 +55,9 @@ import {
   STATIC_SOLVE_RECORDED_SCHEMA_VERSION,
   STATIC_SOLVE_SCHEMA_VERSION,
 } from "../results.ts";
+import { CALCULIX_RESULTS_VIEWER_URI } from "../viewer-session.ts";
 
-export const CALCULIX_RESULTS_VIEWER_URI = "ui://mcp-calculix/results-viewer";
+export { CALCULIX_RESULTS_VIEWER_URI } from "../viewer-session.ts";
 
 export const solveTools: CalculixTool[] = [
   {
@@ -526,6 +527,7 @@ export function createRecordedStaticTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      _meta: { ui: { resourceUri: CALCULIX_RESULTS_VIEWER_URI } },
       handler: (args) => {
         const runId = args.run_id;
         const requestId = args.request_id;
