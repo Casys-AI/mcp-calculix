@@ -1,1 +1,6 @@
 .git
+.deps
+.env
+.env.*
+node_modules
+state

@@ -988,7 +988,7 @@ async function fleetViewerSession() {
     },
     provenance: {
       kind: "mcp-calculix-recorded-run",
-      server: { package: "@casys/mcp-calculix", version: "0.8.4" },
+      server: { package: "@casys/mcp-calculix", version: "0.8.5" },
       tool: { name: "calculix_solve_static_recorded", version: "1.0" },
       runId: fixture.lookup.run.runId,
       requestId: fixture.lookup.run.requestId,

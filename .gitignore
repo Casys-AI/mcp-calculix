@@ -1,4 +1,5 @@
 node_modules/
+.deps/
 
 # Runtime evidence and lock state are persisted outside source control.
 state/

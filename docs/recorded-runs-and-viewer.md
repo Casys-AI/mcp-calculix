@@ -78,7 +78,7 @@ The server publishes:
 
 - whole-view resource: `ui://mcp-calculix/results-viewer`;
 - serialized App manifest: `ui://mcp-calculix/app-manifest`;
-- App identity: `io.casys.mcp-calculix.results@0.8.4`;
+- App identity: `io.casys.mcp-calculix.results@0.8.5`;
 - accepted read-only action: `viewer.session.apply`;
 - recorded session schema:
   `io.casys.mcp-calculix.recorded-static-proof-session/1.0`.
@@ -99,6 +99,11 @@ constraint, or detailed-extrema data into an application dashboard.
 The README capture was produced from the actual versioned viewer bundle loaded
 through the Casys Digital Thread read-only App host, then sent the exact TPS03
 recorded session through `viewer.session.apply`.
+
+That registered session names App version `0.8.4` and the bundle fingerprint
+below. Release `0.8.5` changes the package/App identity and preserves the same
+single-card surface. The documentation keeps the exact registered capture rather
+than fabricating a successor session envelope.
 
 | Item              | Exact identity                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------ |

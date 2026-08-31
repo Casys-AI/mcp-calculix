@@ -20,7 +20,7 @@ STEP bytes -> SHA-256 snapshot -> Gmsh mesh -> generated CalculiX deck
 reports two observations and their result-artifact identity, never an
 engineering verdict.</sub>
 
-Source version `0.8.4` adds an exact serialized App contract, strict joins for
+Source version `0.8.5` adds an exact serialized App contract, strict joins for
 recorded viewer sessions, and a single responsive result component. The server
 is deliberately not a generic CalculiX shell: callers provide STEP geometry and
 reviewed physical values, not arbitrary decks, commands, executables, or flags.
@@ -42,15 +42,15 @@ requirement conclusion. See [analysis contracts](docs/analysis-contracts.md) and
 
 ## Run the released server
 
-Release `0.8.4` publishes to JSR and as a multi-architecture image for
+Release `0.8.5` publishes to JSR and as a multi-architecture image for
 `linux/amd64` and `linux/arm64`. The GitHub release records the exact OCI index
 digest; use that immutable identity rather than a tag:
 
-`ghcr.io/casys-ai/mcp-calculix:0.8.4` is a mutable discovery tag, not a
+`ghcr.io/casys-ai/mcp-calculix:0.8.5` is a mutable discovery tag, not a
 qualified deployment identity. `latest` is mutable too.
 
 ```bash
-RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.4/release-identity.json
+RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.5/release-identity.json
 curl -fsSLo release-identity.json "$RELEASE_IDENTITY_URL"
 IMAGE_REF="$(jq -er '.image | select(test("^ghcr\\.io/casys-ai/mcp-calculix@sha256:[0-9a-f]{64}$"))' release-identity.json)"
 docker pull "$IMAGE_REF"
@@ -71,7 +71,7 @@ docker run --rm --name mcp-calculix \
 The MCP endpoint is `http://127.0.0.1:3015/mcp`. For native stdio from JSR:
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.4/server --stdio
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.5/server --stdio
 ```
 
 Or configure stdio from the released image:

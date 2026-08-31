@@ -2,7 +2,21 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
+## [0.8.5] - 2026-08-31
+
+### Changed
+
+- Carries the `0.8.4` viewer and documentation work into a publishable identity.
+  The `v0.8.4` workflows stopped before any registry or image write because the
+  repository-wide lint command traversed the checked-out split View source.
+- Bounds linting to this repository's TypeScript sources, matching the existing
+  formatting and type-check boundaries while leaving the pinned View checkout to
+  its own repository gates.
+
 ## [0.8.4] - 2026-08-31
+
+`v0.8.4` was tagged, but its official workflows stopped before publication. No
+JSR package, GHCR tag, or GitHub release was created for this version.
 
 ### Added
 
@@ -21,9 +35,9 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
   no longer rendered as a bundled dashboard catalog.
 - The README now leads with a real TPS03 App capture and delegates analysis,
   evidence, deployment, and contributor detail to focused documentation pages.
-- Release workflows now pin the split View source whose package identities
-  match the locked viewer build (`mcp-view` `0.9.1`, contracts `0.1.0`, and
-  components `0.2.0`).
+- Release workflows now pin the split View source whose package identities match
+  the locked viewer build (`mcp-view` `0.9.1`, contracts `0.1.0`, and components
+  `0.2.0`).
 
 ## [0.8.3] - 2026-08-30
 

@@ -7,11 +7,11 @@ multi-architecture OCI image to GHCR. A GitHub release asset named
 `release-identity.json` binds the version, tag, source commit, exact JSR
 package, OCI index digest, and advertised platforms.
 
-Tags such as `0.8.4` and `latest` are discovery channels. Deploy the digest from
+Tags such as `0.8.5` and `latest` are discovery channels. Deploy the digest from
 the release identity:
 
 ```bash
-RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.4/release-identity.json
+RELEASE_IDENTITY_URL=https://github.com/Casys-AI/mcp-calculix/releases/download/v0.8.5/release-identity.json
 curl -fsSLo release-identity.json "$RELEASE_IDENTITY_URL"
 IMAGE_REF="$(jq -er '.image | select(test("^ghcr\\.io/casys-ai/mcp-calculix@sha256:[0-9a-f]{64}$"))' release-identity.json)"
 docker pull "$IMAGE_REF"
@@ -54,7 +54,7 @@ The native era-aware transport accepts classic `2025-06-18` initialization and
 keeps JSON-RPC on stdout.
 
 ```bash
-deno run --allow-all jsr:@casys/mcp-calculix@0.8.4/server --stdio
+deno run --allow-all jsr:@casys/mcp-calculix@0.8.5/server --stdio
 ```
 
 For the image, keep stdin open with `-i`, pass `stdio`, mount inputs read-only,

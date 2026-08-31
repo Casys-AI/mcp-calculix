@@ -1,6 +1,6 @@
 {
   "name": "@casys/mcp-calculix",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": ["jsr:@casys/mcp-server"]
@@ -10,7 +10,7 @@
     "build:ui": "deno run --config deno.json --lock=deno.lock --frozen -A src/ui/results-viewer/build.ts",
     "check:ui:bundle": "deno run --config deno.json --lock=deno.lock --frozen -A src/ui/results-viewer/check-bundle.ts",
     "check": "deno check mod.ts server.ts",
-    "lint": "deno lint",
+    "lint": "deno lint mod.ts server.ts src/api src/client.ts src/results.ts src/viewer-session.ts src/tools src/ui/results-viewer/build.ts src/ui/results-viewer/check-bundle.ts src/ui/results-viewer/local-modules.ts src/ui/results-viewer/test.ts src/ui/results-viewer/src tests scripts",
     "fmt": "deno fmt --check deno.json mod.ts server.ts src/api src/client.ts src/results.ts src/viewer-session.ts src/tools src/ui/results-viewer/build.ts src/ui/results-viewer/check-bundle.ts src/ui/results-viewer/local-modules.ts src/ui/results-viewer/test.ts src/ui/results-viewer/src tests scripts",
     "release:check": "deno task fmt && deno task check && deno task lint && deno task test && deno task check:ui:bundle",
     "test:native": "CALCULIX_RUN_NATIVE=1 deno task test",

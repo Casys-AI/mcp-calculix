@@ -12,7 +12,7 @@ import {
 
 const PROTOCOL_VERSION = "2026-07-28";
 const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
-const CURRENT_RELEASE_VERSION = "0.8.4";
+const CURRENT_RELEASE_VERSION = "0.8.5";
 const CURRENT_DISCOVERY_TAG =
   `ghcr.io/casys-ai/mcp-calculix:${CURRENT_RELEASE_VERSION}`;
 const RELEASE_IDENTITY_URL =
