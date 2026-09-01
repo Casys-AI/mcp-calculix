@@ -17,7 +17,9 @@ export interface BufferedSessionReceiver<T> {
 
 /**
  * Local compatibility shim for mcp-view's pre-connect viewer-session FIFO.
- * Remove this when the published SDK exposes `createMcpApp.viewerSession`.
+ * Supersedable: `createMcpApp` exposes `viewerSession` since @casys/mcp-view
+ * 0.9.x. Replacing this shim is a lifecycle change, not a deletion — the
+ * pre-connect buffering below must keep working through the swap.
  */
 export function createBufferedSessionReceiver<T>(options: {
   readonly events: SessionEventSource;

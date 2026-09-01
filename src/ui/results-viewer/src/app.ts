@@ -56,10 +56,12 @@ export async function startCalculixResultsApp(
     console.error("[mcp-calculix] Results projection failed", error);
   };
 
-  // The published mcp-view version does not yet expose its pre-connect
-  // viewerSession option. Keep the same App-level FIFO lifecycle locally so
-  // a one-shot host action cannot be lost while ext-apps connects or a
-  // component surface remounts.
+  // @casys/mcp-view now exposes an equivalent pre-connect `viewerSession`
+  // option on createMcpApp (AppConfig.viewerSession, installed before
+  // connect()), so this local FIFO can be replaced by it. Doing so changes the
+  // App lifecycle and is left to a dedicated change; until then this keeps the
+  // same guarantee: a one-shot host action is not lost while ext-apps connects
+  // or a component surface remounts.
   const sessionEvents = createComposeEventClient();
   const sessionReceiver = createBufferedSessionReceiver<DisplayState>({
     events: sessionEvents,
