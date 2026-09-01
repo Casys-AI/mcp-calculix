@@ -9,6 +9,11 @@
 import serializedViewAppManifest from "./ui/app-manifest.json" with {
   type: "json",
 };
+import {
+  VIEW_APP_MANIFEST_SCHEMA,
+  VIEWER_SESSION_APPLY_ACTION,
+} from "@casys/mcp-view-contracts";
+export { VIEW_APP_MANIFEST_SCHEMA, VIEWER_SESSION_APPLY_ACTION };
 
 export const CALCULIX_RESULTS_VIEWER_URI =
   "ui://mcp-calculix/results-viewer" as const;
@@ -17,9 +22,6 @@ export const CALCULIX_VIEW_APP_MANIFEST_URI =
 export const CALCULIX_VIEWER_SESSION_SCHEMA =
   "io.casys.mcp-calculix.recorded-static-proof-session/1.0" as const;
 export const CALCULIX_VIEWER_SESSION_KIND = "calculix.static-proof" as const;
-export const VIEWER_SESSION_APPLY_ACTION = "viewer.session.apply" as const;
-export const VIEW_APP_MANIFEST_SCHEMA =
-  "io.casys.mcp.view-app-manifest/1.0" as const;
 
 export const CALCULIX_RESULT_SCHEMA_IDS = {
   ordinaryStatic: "io.casys.mcp-calculix.static-solve/2.0",
