@@ -19,7 +19,8 @@
   },
   "exports": {
     ".": "./mod.ts",
-    "./server": "./server.ts"
+    "./server": "./server.ts",
+    "./view-app-manifest": "./src/ui/app-manifest.json"
   },
   "publish": {
     "include": [
