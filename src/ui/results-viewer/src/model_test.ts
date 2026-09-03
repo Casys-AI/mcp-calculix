@@ -704,12 +704,76 @@ Deno.test({
           2,
         );
         assertEquals(root.querySelectorAll('[data-tone="success"]').length, 0);
+        // The model and its boundary conditions are facts of the sheet, not a pane.
+        assertEquals(
+          Array.from(
+            root.querySelectorAll(".mcp-view-element-section-title"),
+            (title) => title.textContent,
+          ),
+          ["Model", "Boundary conditions"],
+        );
+        const text = root.textContent ?? "";
+        assertStringIncludes(text, "SelectionFIXED · 210 nodes");
+        assertStringIncludes(text, "SelectionLOADED · 87 nodes");
+        assertEquals(
+          text.split("FIXED").length - 1,
+          2,
+          "selection, then fixed",
+        );
+        assertStringIncludes(text, "LoadLOADED · [0, 0, -500] N");
+        assertEquals(
+          root.querySelectorAll('.mcp-view-key-values[data-layout="facts"]')
+            .length,
+          2,
+          "both sections read as facts, not as an inspector dump",
+        );
         assertNoInventedVerdict(root);
 
         await mounted.dispose();
         assertEquals(root.textContent, "");
       },
     );
+  },
+});
+
+Deno.test({
+  name:
+    "a deck without fixed selections or loads has no boundary-conditions section",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    const unconstrained = {
+      ...result,
+      constraints: { fixedSelections: [], loads: [] },
+    };
+    await withMountedSurface(unconstrained, {}, (root) => {
+      assertEquals(
+        Array.from(
+          root.querySelectorAll(".mcp-view-element-section-title"),
+          (title) => title.textContent,
+        ),
+        ["Model"],
+      );
+      assertEquals(root.textContent?.includes("Boundary conditions"), false);
+    });
+  },
+});
+
+Deno.test({
+  name: "model counts and load vectors follow the host locale too",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, { locale: "en-US" }, (root) => {
+      const text = root.textContent ?? "";
+      assertStringIncludes(text, "Nodes9,669");
+      assertStringIncludes(text, "Elements5,568");
+      assertStringIncludes(text, "FIXED · 210 nodes");
+      assertStringIncludes(text, "LOADED · [0, 0, -500] N");
+    });
+    await withMountedSurface(result, { locale: "de-DE" }, (root) => {
+      const text = root.textContent ?? "";
+      assertStringIncludes(text, "Nodes9.669");
+      assertStringIncludes(text, "LOADED · [0, 0, -500] N");
+    });
   },
 });
 

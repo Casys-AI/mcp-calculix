@@ -46,7 +46,7 @@
     iframe {
       display: block;
       width: 100%;
-      height: 236px;
+      height: 120px;
       border: 0;
     }
     </style>
@@ -63,6 +63,8 @@
     </main>
     <script type="module">
     const viewer = document.querySelector("#viewer");
+    // The inline container a host would offer; the iframe follows the App's height up to it.
+    const MAX_HEIGHT = 640;
     // Listen before the fixture arrives: the bundle may initialize first.
     const session = fetch("./tps03-recorded-static-proof-session.json").then(
       (response) => {
@@ -86,12 +88,20 @@
             hostContext: {
               theme: "light",
               displayMode: "inline",
-              containerDimensions: { width: 758, maxHeight: 236 },
+              containerDimensions: { width: 758, maxHeight: MAX_HEIGHT },
               locale: "en",
               platform: "web",
             },
           },
         }, "*");
+        return;
+      }
+      if (message.method === "ui/notifications/size-changed") {
+        // Follow the App's reported height up to the container limit, like a host does.
+        const height = message.params?.height;
+        if (typeof height === "number") {
+          viewer.style.height = `${Math.min(Math.ceil(height), MAX_HEIGHT)}px`;
+        }
         return;
       }
       if (message.method === "ui/notifications/initialized" && !initialized) {

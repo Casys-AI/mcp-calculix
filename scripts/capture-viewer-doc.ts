@@ -22,7 +22,7 @@ import {
 const root = dirname(dirname(fromFileUrl(import.meta.url)));
 const harnessPath = "/docs/fixtures/viewer-preview.html";
 const outputPath = join(root, "docs/assets/calculix-results-viewer-tps03.png");
-const WINDOW = { width: 900, height: 400 };
+const WINDOW = { width: 900, height: 600 };
 /** Chrome and ffmpeg both finish in seconds; a deadline keeps a stuck one from hanging. */
 const TOOL_DEADLINE_MS = 60_000;
 

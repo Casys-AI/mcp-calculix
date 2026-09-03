@@ -20,3 +20,13 @@ body {
   text-overflow: clip;
   white-space: normal;
 }
+
+/* Readings first, then each section of facts, one uniform gap between them. */
+.calculix-result-card .mcp-view-element-body {
+  display: grid;
+  gap: 14px;
+}
+
+.calculix-result-card .mcp-view-element-section + .mcp-view-element-section {
+  margin-top: 0;
+}

@@ -91,8 +91,10 @@ then projects the observations. It never invokes a solve operation.
 
 The default view is exactly one `calculix.static-result` semantic component. It
 shows the result identity, maximum displacement, maximum von Mises stress, their
-node or element IDs, and compact result provenance. It does not wrap mesh, STEP,
-constraint, or detailed-extrema data into an application dashboard.
+node or element IDs, then the model and boundary-condition facts the deck stated
+(node and element counts, named selections, fixed selections, load vectors), and
+compact result provenance. It does not wrap STEP or detailed-extrema data into
+an application dashboard.
 
 ## TPS03 visual evidence
 
@@ -130,7 +132,7 @@ deno task docs:viewer-screenshot
 ```
 
 The task serves the repository on a loopback port, renders the harness in
-headless Chrome at a fixed 900×400 window, 2× scale and `en-US` locale, and
+headless Chrome at a fixed 900×600 window, 2× scale and `en-US` locale, and
 writes
 [`docs/assets/calculix-results-viewer-tps03.png`](assets/calculix-results-viewer-tps03.png).
 Point `CHROME_BIN` at a Chrome or `chrome-headless-shell` binary when none of
