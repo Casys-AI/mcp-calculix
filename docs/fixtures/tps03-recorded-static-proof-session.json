@@ -1,0 +1,120 @@
+{
+  "schemaVersion": "io.casys.mcp-calculix.recorded-static-proof-session/1.0",
+  "kind": "calculix.static-proof",
+  "basis": {
+    "projectId": "two-piece-tablet-stand-tps03",
+    "projectRevision": 135,
+    "subjectId": "project:two-piece-tablet-stand-tps03",
+    "thread": {
+      "id": "project:two-piece-tablet-stand-tps03:r17:decide-accept-evaluation-closeout-run:tps03-mechanical-closeout-queue-20260827-001",
+      "revision": 17
+    },
+    "sessionFingerprint": "sha256:9add3588ed50f379cb51f4633d8e74d1007df4e090f045079256ff6f3126ac05"
+  },
+  "anchor": {
+    "kind": "artifact",
+    "id": "calculix-isolated-result-json-b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734",
+    "uri": "casys://isolated-output/sha256/b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734",
+    "fingerprint": "sha256:b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734"
+  },
+  "provenance": {
+    "kind": "digital-thread-operation",
+    "operation": "verify.run-fea-static-proof@3",
+    "runId": "run:tps03-fea-successor-queue-20260827-001",
+    "inputArtifact": {
+      "uri": "casys://isolated-output/sha256/8111b428652d40273b565507ecc319f04242481415244580693c774013a3d5f4",
+      "mediaType": "model/step",
+      "fingerprint": "sha256:8111b428652d40273b565507ecc319f04242481415244580693c774013a3d5f4",
+      "bytes": 15435
+    },
+    "resultArtifact": {
+      "uri": "casys://isolated-output/sha256/b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734",
+      "fingerprint": "sha256:b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734"
+    },
+    "evidenceArtifact": {
+      "uri": "casys://calculix-isolated-execution-evidence/sha256/19d6f6c7bdfddeae4a05e8a66fc4e40a1e7ed39513efbb47eaad157cef88316a",
+      "fingerprint": "sha256:19d6f6c7bdfddeae4a05e8a66fc4e40a1e7ed39513efbb47eaad157cef88316a"
+    }
+  },
+  "projection": {
+    "status": "available",
+    "result": {
+      "constraints": {
+        "fixedSelections": [
+          "FIXED_END"
+        ],
+        "loads": [
+          {
+            "forceN": [
+              0,
+              -19.62,
+              0
+            ],
+            "selection": "LOADED_END"
+          }
+        ]
+      },
+      "executionIdentity": {
+        "engines": {
+          "ccx": {
+            "command": "ccx",
+            "version": "This is Version 2.21"
+          },
+          "gmsh": {
+            "command": "gmsh",
+            "version": "4.12.1"
+          }
+        },
+        "image": {
+          "status": "bound-by-isolated-runner-receipt"
+        },
+        "lowering": {
+          "id": "calculix.static.abaqus-deck",
+          "version": "1.0"
+        },
+        "profile": {
+          "id": "calculix-static-proof-v1",
+          "version": "1.0.0"
+        },
+        "schemaVersion": "1.0",
+        "wrapper": {
+          "id": "calculix-static-proof-v1",
+          "version": "1.0.0"
+        }
+      },
+      "inputArtifact": {
+        "byteCount": 15435,
+        "mediaType": "model/step",
+        "sha256": "8111b428652d40273b565507ecc319f04242481415244580693c774013a3d5f4"
+      },
+      "mesh": {
+        "elements": 3716,
+        "nodes": 1324,
+        "nodesPerSelection": {
+          "FIXED_END": 76,
+          "LOADED_END": 76,
+          "PART": 1324
+        }
+      },
+      "metrics": {
+        "maximumDisplacement": {
+          "nodeId": 167,
+          "unit": "mm",
+          "value": 0.00544562764183353,
+          "vectorMm": [
+            1.052647e-06,
+            -0.005436518,
+            0.0003148513
+          ]
+        },
+        "maximumVonMises": {
+          "elementId": 3764,
+          "unit": "MPa",
+          "value": 0.7601906295239981
+        }
+      },
+      "requestId": "rop2-calculix-88216da741275f44a3984dfec3914f08",
+      "schemaVersion": "calculix-isolated-static-result/1.0"
+    }
+  }
+}

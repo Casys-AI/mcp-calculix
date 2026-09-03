@@ -26,7 +26,7 @@ type CalculixComponentProps = PreactSurfaceComponentProps<
   StaticResultsViewData
 >;
 
-const StaticResult = ({ data }: CalculixComponentProps) => (
+const StaticResult = ({ data, context }: CalculixComponentProps) => (
   <SemanticElement
     className="calculix-result-card"
     reference={{
@@ -51,14 +51,20 @@ const StaticResult = ({ data }: CalculixComponentProps) => (
             {
               id: "max-displacement",
               label: "Maximum displacement",
-              value: formatNumber(data.metrics.maxDisplacement.value),
+              value: formatNumber(
+                data.metrics.maxDisplacement.value,
+                context.hostContext.locale,
+              ),
               unit: data.metrics.maxDisplacement.unit,
               detail: `Node ${data.metrics.maxDisplacement.nodeId}`,
             },
             {
               id: "max-von-mises",
               label: "Maximum von Mises",
-              value: formatNumber(data.metrics.maxVonMises.value),
+              value: formatNumber(
+                data.metrics.maxVonMises.value,
+                context.hostContext.locale,
+              ),
               unit: data.metrics.maxVonMises.unit,
               detail: `Element ${data.metrics.maxVonMises.elementId}`,
             },
@@ -72,7 +78,7 @@ const StaticResult = ({ data }: CalculixComponentProps) => (
 
 /** Standalone default: one bounded static-result card, not a 4-pane dashboard. */
 export const CALCULIX_RESULTS_SURFACE = defineComponentSurface({
-  layout: { type: "stack", gap: "sm" },
+  layout: { type: "stack", gap: "none" },
   components: [
     {
       id: "static-result",
@@ -99,8 +105,9 @@ export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
   defaultSurface: CALCULIX_RESULTS_SURFACE,
 });
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 5 }).format(
+/** The host declares the locale; the viewing machine's own setting is not it. */
+function formatNumber(value: number, locale: string | undefined): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 5 }).format(
     value,
   );
 }

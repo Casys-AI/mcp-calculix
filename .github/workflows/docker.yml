@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: Casys-AI/mcp-server
-          ref: 87b54e555f5f2ab125405640c4e15fea481788f8
+          ref: bb8bffd096829ff617b32d73791cb2887aa792d8
           path: .deps/mcp-server
           persist-credentials: false
       - uses: denoland/setup-deno@v2

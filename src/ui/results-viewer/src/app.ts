@@ -5,6 +5,7 @@ import {
   type SurfaceAppHandle,
   type SurfaceDisplayState,
 } from "@casys/mcp-view-components/preact";
+import { installMcpViewFonts } from "@casys/mcp-view-components/fonts";
 import {
   CALCULIX_VIEW_APP_MANIFEST,
   CALCULIX_VIEWER_SESSION_SCHEMA,
@@ -46,6 +47,8 @@ export type CalculixSurfaceAppOptions = PreactSurfaceAppOptions<
 export function startCalculixResultsApp(
   root: HTMLElement,
 ): Promise<SurfaceAppHandle<StaticResultsViewData>> {
+  // Hosts sandbox the App without web fonts; the kit embeds its three faces.
+  installMcpViewFonts(root.ownerDocument);
   return startPreactSurfaceApp(calculixSurfaceAppOptions(root));
 }
 

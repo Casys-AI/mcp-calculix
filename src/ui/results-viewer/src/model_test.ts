@@ -88,10 +88,6 @@ const recordedDocument = {
   metrics: result.metrics,
 } as const;
 
-const componentContext = {} as unknown as PreactSurfaceContext<
-  StaticResultsViewData
->;
-
 Deno.test("results viewer parses the closed direct static-solve v2 result", () => {
   assertEquals(parseStaticSolve(result), result);
   assertThrows(
@@ -510,9 +506,10 @@ Deno.test("default surface is one compact static-result card", () => {
     [CALCULIX_COMPONENT_KEYS.staticResult],
   );
   assertEquals(catalog.defaultSurface, CALCULIX_RESULTS_SURFACE);
+  // The kit frames the surface and separates stacked components with hairlines.
   assertEquals(CALCULIX_RESULTS_SURFACE.layout, {
     type: "stack",
-    gap: "sm",
+    gap: "none",
   });
   assertEquals(CALCULIX_RESULTS_SURFACE.components, [{
     id: "static-result",
@@ -717,6 +714,19 @@ Deno.test({
 });
 
 Deno.test({
+  name: "metric values follow the host locale, not the viewing machine",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, { locale: "en-US" }, (root) => {
+      assertStringIncludes(root.textContent ?? "", "0.0428");
+    });
+    await withMountedSurface(result, { locale: "de-DE" }, (root) => {
+      assertStringIncludes(root.textContent ?? "", "0,0428");
+    });
+  },
+});
+
+Deno.test({
   name: "ordinary static-solve card has no ArtifactRow URI and no verdict",
   permissions: { read: true, env: true, run: true },
   async fn() {
@@ -791,7 +801,10 @@ async function withMountedSurface(
       root,
       registry: CALCULIX_COMPONENT_REGISTRY,
       data,
-      appContext: componentContext,
+      // Components read the same host context the surface was selected with.
+      appContext: { hostContext } as unknown as PreactSurfaceContext<
+        StaticResultsViewData
+      >,
       hostContext: hostContext as PreactSurfaceContext<
         StaticResultsViewData
       >["hostContext"],
