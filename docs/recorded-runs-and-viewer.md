@@ -91,26 +91,30 @@ then projects the observations. It never invokes a solve operation.
 
 The default view is exactly one `calculix.static-result` semantic component. It
 shows the result identity, maximum displacement, maximum von Mises stress, their
-node or element IDs, and compact result provenance. It does not wrap mesh, STEP,
-constraint, or detailed-extrema data into an application dashboard.
+node or element IDs, then the model and boundary-condition facts the deck stated
+(node and element counts, named selections, fixed selections, load vectors), and
+compact result provenance. It does not wrap STEP or detailed-extrema data into
+an application dashboard.
 
 ## TPS03 visual evidence
 
-The README capture was produced from the actual versioned viewer bundle loaded
-through the Casys Digital Thread read-only App host, then sent the exact TPS03
-recorded session through `viewer.session.apply`.
-
-That registered session names App version `0.8.4` and the bundle fingerprint
-below. Release `0.8.5` changes the package/App identity and preserves the same
-single-card surface. The documentation keeps the exact registered capture rather
-than fabricating a successor session envelope.
+The README capture replays the exact TPS03 recorded session registered by the
+Casys Digital Thread read-only App host. That session is committed verbatim as
+[`docs/fixtures/tps03-recorded-static-proof-session.json`](fixtures/tps03-recorded-static-proof-session.json);
+[`docs/fixtures/viewer-preview.html`](fixtures/viewer-preview.html) loads the
+committed viewer bundle, completes the MCP Apps handshake, and sends that
+session through `viewer.session.apply`. The documentation never fabricates a
+successor session envelope: the identities below are the registered ones, and
+`tests/viewer_docs_test.ts` parses the committed session with the production
+validator. The session, App and bundle rows are the Digital Thread's own
+registration record — they are not carried inside the session envelope.
 
 | Item              | Exact identity                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------ |
 | Session           | `mcp-app:db772cea8a8dee624bb36801a2b85af67eddd42657e956406b3c46b7678f1c4b`                       |
 | Host anchor       | `calculix-isolated-result-json-b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734` |
-| Viewer bundle     | `sha256:6a2da9cba09795100a0d6d6f073e5693d666c8d22aee9b5816fcd273aa343845`                        |
-| Bundle bytes      | `595508`                                                                                         |
+| Registered App    | `io.casys.mcp-calculix.results@0.8.4`                                                            |
+| Registered bundle | `sha256:6a2da9cba09795100a0d6d6f073e5693d666c8d22aee9b5816fcd273aa343845` (`595508` bytes)       |
 | Result artifact   | `sha256:b09ecd1782107093b505287f5800ac5e7f05cdaec5bbe845b4d19568bda64734`                        |
 | Project/thread    | `two-piece-tablet-stand-tps03 r135` / `Thread r17`                                               |
 | Projection status | `available` with literal viewer label `Documentary`                                              |
@@ -119,10 +123,22 @@ The rendered observations are maximum displacement `0.00545 mm` at node `167`
 and maximum von Mises stress `0.76019 MPa` at element `3764`. These values are
 documentary evidence from that exact recorded result, not a requirement verdict.
 
-The optimized PNG is
-[`docs/assets/calculix-results-viewer-tps03.png`](assets/calculix-results-viewer-tps03.png),
-1328 × 364 pixels. The image is documentation; the identities above and the
-versioned bundle remain the machine-checkable join.
+The image itself is rendered by the bundle committed under `src/ui/dist/`, so it
+follows the current App version rather than the registered `0.8.4` bundle. After
+a viewer change, rebuild the bundle and regenerate it:
+
+```sh
+deno task docs:viewer-screenshot
+```
+
+The task serves the repository on a loopback port, renders the harness in
+headless Chrome at a fixed 900×600 window, 2× scale and `en-US` locale, and
+writes
+[`docs/assets/calculix-results-viewer-tps03.png`](assets/calculix-results-viewer-tps03.png).
+Point `CHROME_BIN` at a Chrome or `chrome-headless-shell` binary when none of
+the usual locations has one; `ffmpeg` (or `FFMPEG_BIN`) only shrinks the PNG
+when present. The image is documentation; the identities above and the versioned
+bundle remain the machine-checkable join.
 
 ## Digital Thread boundary
 

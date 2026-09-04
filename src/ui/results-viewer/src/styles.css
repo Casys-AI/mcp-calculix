@@ -4,40 +4,29 @@ body {
   background: transparent;
 }
 
+/* The kit frames the surface; the viewer only keeps it off the iframe edge. */
 .calculix-component-surface {
   container-type: inline-size;
-  padding: 0.5rem;
+  padding: 8px;
 }
 
 .calculix-viewer-state {
-  margin: 0.65rem;
+  margin: 8px;
 }
 
-.calculix-result-card {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.55rem;
-  padding: 0.72rem;
-}
-
-.calculix-result-card > .mcp-view-element-ident,
-.calculix-result-card > .mcp-view-element-body,
-.calculix-result-card > .mcp-view-element-provenance {
-  grid-column: 1;
-}
-
+/* The result title wraps rather than truncates in narrow hosts. */
 .calculix-result-card .mcp-view-element-ident-label {
   overflow: visible;
-  line-height: 1.25;
   text-overflow: clip;
   white-space: normal;
 }
 
-.calculix-result-readings {
-  grid-template-columns: minmax(0, 1fr);
+/* Readings first, then each section of facts, one uniform gap between them. */
+.calculix-result-card .mcp-view-element-body {
+  display: grid;
+  gap: 14px;
 }
 
-@container (min-width: 30rem) {
-  .calculix-result-readings {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.calculix-result-card .mcp-view-element-section + .mcp-view-element-section {
+  margin-top: 0;
 }

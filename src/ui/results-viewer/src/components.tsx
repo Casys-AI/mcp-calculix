@@ -13,9 +13,13 @@ import {
   ElementBody,
   ElementIdent,
   ElementProvenance,
+  ElementSection,
+  InlineCode,
+  KeyValueList,
   MetricGrid,
   SemanticElement,
 } from "@casys/mcp-view-components/preact/components";
+import type { ComponentChild } from "preact";
 import type { StaticResultsViewData } from "./model.ts";
 
 export const CALCULIX_COMPONENT_KEYS = {
@@ -26,53 +30,81 @@ type CalculixComponentProps = PreactSurfaceComponentProps<
   StaticResultsViewData
 >;
 
-const StaticResult = ({ data }: CalculixComponentProps) => (
-  <SemanticElement
-    className="calculix-result-card"
-    reference={{
-      domain: "calculix",
-      kind: data.kind,
-      id: resultIdentity(data),
-      basisFingerprint: resultBasisFingerprint(data),
-    }}
-    density="card"
-    ident={
-      <ElementIdent
-        marker={resultBadge(data)}
-        label={resultTitle(data)}
-        detail={resultEyebrow(data)}
-      />
-    }
-    body={
-      <ElementBody>
-        <MetricGrid
-          className="calculix-result-readings"
-          items={[
-            {
-              id: "max-displacement",
-              label: "Maximum displacement",
-              value: formatNumber(data.metrics.maxDisplacement.value),
-              unit: data.metrics.maxDisplacement.unit,
-              detail: `Node ${data.metrics.maxDisplacement.nodeId}`,
-            },
-            {
-              id: "max-von-mises",
-              label: "Maximum von Mises",
-              value: formatNumber(data.metrics.maxVonMises.value),
-              unit: data.metrics.maxVonMises.unit,
-              detail: `Element ${data.metrics.maxVonMises.elementId}`,
-            },
-          ]}
+interface Fact {
+  readonly id: string;
+  readonly label: string;
+  readonly value: ComponentChild;
+}
+
+const StaticResult = ({ data, context }: CalculixComponentProps) => {
+  const boundary = boundaryFacts(data, context.hostContext.locale);
+  return (
+    <SemanticElement
+      className="calculix-result-card"
+      reference={{
+        domain: "calculix",
+        kind: data.kind,
+        id: resultIdentity(data),
+        basisFingerprint: resultBasisFingerprint(data),
+      }}
+      density="card"
+      ident={
+        <ElementIdent
+          marker={resultBadge(data)}
+          label={resultTitle(data)}
+          detail={resultEyebrow(data)}
         />
-      </ElementBody>
-    }
-    provenance={resultProvenance(data)}
-  />
-);
+      }
+      body={
+        <ElementBody>
+          <MetricGrid
+            className="calculix-result-readings"
+            items={[
+              {
+                id: "max-displacement",
+                label: "Maximum displacement",
+                value: formatNumber(
+                  data.metrics.maxDisplacement.value,
+                  context.hostContext.locale,
+                ),
+                unit: data.metrics.maxDisplacement.unit,
+                detail: `Node ${data.metrics.maxDisplacement.nodeId}`,
+              },
+              {
+                id: "max-von-mises",
+                label: "Maximum von Mises",
+                value: formatNumber(
+                  data.metrics.maxVonMises.value,
+                  context.hostContext.locale,
+                ),
+                unit: data.metrics.maxVonMises.unit,
+                detail: `Element ${data.metrics.maxVonMises.elementId}`,
+              },
+            ]}
+          />
+          <ElementSection title="Model">
+            <Facts items={modelFacts(data, context.hostContext.locale)} />
+          </ElementSection>
+          {boundary.length > 0 && (
+            <ElementSection title="Boundary conditions">
+              <Facts items={boundary} />
+            </ElementSection>
+          )}
+        </ElementBody>
+      }
+      provenance={resultProvenance(data)}
+    />
+  );
+};
+
+/** Reader-worded facts in two columns; the inspector layout is for field dumps. */
+function Facts({ items }: { readonly items: readonly Fact[] }) {
+  return <KeyValueList layout="facts" items={items} />;
+}
 
 /** Standalone default: one bounded static-result card, not a 4-pane dashboard. */
 export const CALCULIX_RESULTS_SURFACE = defineComponentSurface({
-  layout: { type: "stack", gap: "sm" },
+  layout: { type: "stack", gap: "none" },
   components: [
     {
       id: "static-result",
@@ -99,10 +131,70 @@ export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
   defaultSurface: CALCULIX_RESULTS_SURFACE,
 });
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 5 }).format(
+/** The host declares the locale; the viewing machine's own setting is not it. */
+function formatNumber(value: number, locale: string | undefined): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 5 }).format(
     value,
   );
+}
+
+function formatCount(value: number, locale: string | undefined): string {
+  return new Intl.NumberFormat(locale).format(value);
+}
+
+/** What was meshed: the whole model, then every named selection with its node count. */
+function modelFacts(
+  data: StaticResultsViewData,
+  locale: string | undefined,
+): Fact[] {
+  const { mesh } = data;
+  return [
+    { id: "nodes", label: "Nodes", value: formatCount(mesh.nodes, locale) },
+    {
+      id: "elements",
+      label: "Elements",
+      value: formatCount(mesh.elements, locale),
+    },
+    ...Object.entries(mesh.nodesPerSelection).map(([selection, nodes]) => ({
+      id: `selection-${selection}`,
+      label: "Selection",
+      value: (
+        <>
+          <InlineCode>{selection}</InlineCode> · {formatCount(nodes, locale)}
+          {" "}
+          nodes
+        </>
+      ),
+    })),
+  ];
+}
+
+/** Fixed selections and every applied force vector, as the deck stated them. */
+function boundaryFacts(
+  data: StaticResultsViewData,
+  locale: string | undefined,
+): Fact[] {
+  const { constraints } = data;
+  return [
+    ...constraints.fixedSelections.map((selection) => ({
+      id: `fixed-${selection}`,
+      label: "Fixed",
+      value: <InlineCode>{selection}</InlineCode>,
+    })),
+    // The solver accepts repeated load selections, so the index keeps ids unique.
+    ...constraints.loads.map((load, index) => ({
+      id: `load-${index + 1}-${load.selection}`,
+      label: "Load",
+      value: (
+        <>
+          <InlineCode>{load.selection}</InlineCode> · [
+          {load.forceN.map((component) => formatNumber(component, locale))
+            .join(", ")}
+          ] N
+        </>
+      ),
+    })),
+  ];
 }
 
 function resultTitle(data: StaticResultsViewData): string {

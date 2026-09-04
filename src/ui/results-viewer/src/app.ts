@@ -1,28 +1,14 @@
 import {
-  type AppHandle,
-  createComposeEventClient,
-  createMcpApp,
-  defineView,
-} from "@casys/mcp-view";
-import {
-  activeComponentSurface,
-  applySurfaceContext,
-  componentCatalogCapabilities,
-  type ComponentSurface,
-  installMcpViewTheme,
-  type McpViewHostContext,
-  mountComponentSurface,
-  type MountedComponentSurface,
-} from "@casys/mcp-view-components";
-import {
-  type PresentationTone,
-  StateMessage,
-} from "@casys/mcp-view-components/preact/components";
-import { createElement, render } from "preact";
+  type PreactSurfaceAppOptions,
+  renderStatusMessage,
+  startPreactSurfaceApp,
+  type SurfaceAppHandle,
+  type SurfaceDisplayState,
+} from "@casys/mcp-view-components/preact";
+import { installMcpViewFonts } from "@casys/mcp-view-components/fonts";
 import {
   CALCULIX_VIEW_APP_MANIFEST,
   CALCULIX_VIEWER_SESSION_SCHEMA,
-  VIEWER_SESSION_APPLY_ACTION,
 } from "../../../viewer-session.ts";
 import { CALCULIX_COMPONENT_REGISTRY } from "./components.tsx";
 import {
@@ -31,296 +17,126 @@ import {
   displayStateFromViewerSession,
   type StaticResultsViewData,
 } from "./model.ts";
-import { createBufferedSessionReceiver } from "./session-receiver.ts";
-
-type ResultsViewerState = Record<string, never>;
 
 export const CALCULIX_APP_INFO = {
   name: CALCULIX_VIEW_APP_MANIFEST.app.id,
   version: CALCULIX_VIEW_APP_MANIFEST.app.version,
 } as const;
 
-/** Start the MCP-owned CalculiX projection and its read-only session receiver. */
-export async function startCalculixResultsApp(
+/** The status class every CalculiX message carries, in and out of the App. */
+export const CALCULIX_STATUS_CLASS = "calculix-viewer-state";
+/** `code` of the danger state shown when a recorded session fails the strict parser. */
+export const SESSION_REJECTED_CODE = "session-rejected";
+
+export type CalculixSurfaceState = SurfaceDisplayState<StaticResultsViewData>;
+
+export type CalculixSurfaceAppOptions = PreactSurfaceAppOptions<
+  StaticResultsViewData,
+  unknown
+>;
+
+/**
+ * Start the MCP-owned CalculiX projection.
+ *
+ * The App lifecycle — loading until the first result, one projection per tool
+ * result, the host-selected surface remounted when the host context moves,
+ * recorded sessions buffered before the transport connects — belongs to
+ * `startPreactSurfaceApp`. This module only says what CalculiX projects and
+ * how its statuses read.
+ */
+export function startCalculixResultsApp(
   root: HTMLElement,
-): Promise<void> {
-  installMcpViewTheme();
-  const state: ResultsViewerState = {};
-  let mounted: MountedComponentSurface | undefined;
-  let pendingMount: Promise<void> | undefined;
-  let mountGeneration = 0;
-  let currentResult: StaticResultsViewData | undefined;
-  let removeHostContextListener: (() => void) | undefined;
+): Promise<SurfaceAppHandle<StaticResultsViewData>> {
+  // Hosts sandbox the App without web fonts; the kit embeds its three faces.
+  installMcpViewFonts(root.ownerDocument);
+  return startPreactSurfaceApp(calculixSurfaceAppOptions(root));
+}
 
-  const reportError = (error: unknown): void => {
-    console.error("[mcp-calculix] Results projection failed", error);
-  };
-
-  // @casys/mcp-view now exposes an equivalent pre-connect `viewerSession`
-  // option on createMcpApp (AppConfig.viewerSession, installed before
-  // connect()), so this local FIFO can be replaced by it. Doing so changes the
-  // App lifecycle and is left to a dedicated change; until then this keeps the
-  // same guarantee: a one-shot host action is not lost while ext-apps connects
-  // or a component surface remounts.
-  const sessionEvents = createComposeEventClient();
-  const sessionReceiver = createBufferedSessionReceiver<DisplayState>({
-    events: sessionEvents,
-    action: VIEWER_SESSION_APPLY_ACTION,
-    async map(value) {
-      try {
-        return await displayStateFromViewerSession(value);
-      } catch (error) {
-        return {
-          kind: "error",
-          message: `Rejected ${CALCULIX_VIEWER_SESSION_SCHEMA} session: ${
-            errorMessage(error)
-          }`,
-        };
-      }
-    },
-    onError: reportError,
-  });
-
-  const disposeSessionChannel = (): void => {
-    sessionReceiver.dispose();
-    sessionEvents.destroy();
-  };
-
-  const disposeSurface = async (): Promise<void> => {
-    mountGeneration += 1;
-    await pendingMount;
-    pendingMount = undefined;
-    const active = mounted;
-    mounted = undefined;
-    await active?.dispose();
-  };
-
-  const status = defineView<ResultsViewerState, DisplayState, DisplayState>({
-    onEnter: (_context, next) => {
-      currentResult = undefined;
-      return next;
-    },
-    render(_context, next) {
-      return renderDisplayState(next);
-    },
-    onLeave: disposeSurface,
-  });
-
-  const surface = defineView<
-    ResultsViewerState,
-    StaticResultsViewData,
-    StaticResultsViewData
-  >({
-    onEnter: (_context, data) => {
-      currentResult = data;
-      return data;
-    },
-    render(context, data) {
-      const shell = document.createElement("div");
-      shell.className = "calculix-component-surface";
-      const resolution = resolveCalculixSurface(context.hostContext);
-      if (!resolution.ok) {
-        shell.replaceChildren(renderStateMessage(
-          resolution.message,
-          "danger",
-        ));
-        return shell;
-      }
-      const selected = resolution.surface;
-
-      const generation = ++mountGeneration;
-      pendingMount = mountComponentSurface({
-        root: shell,
-        registry: CALCULIX_COMPONENT_REGISTRY,
-        data,
-        appContext: context,
-        hostContext: context.hostContext,
-        surface: selected,
-      }).then(async (next) => {
-        if (generation !== mountGeneration) {
-          await next.dispose();
-          return;
-        }
-        mounted = next;
-      }).catch((error) => {
-        shell.replaceChildren(renderStateMessage(
-          `The CalculiX component surface failed: ${errorMessage(error)}`,
-          "danger",
-        ));
-        reportError(error);
-      });
-      return shell;
-    },
-    onLeave: disposeSurface,
-  });
-
-  let handle: AppHandle<ResultsViewerState>;
-  try {
-    handle = await createMcpApp<ResultsViewerState>({
-      info: CALCULIX_APP_INFO,
-      root,
-      strict: true,
-      views: { status, surface },
-      initialView: "status",
-      initialArgs: { kind: "loading" } satisfies DisplayState,
-      initialState: state,
-      capabilities: {
-        experimental: componentCatalogCapabilities(
-          CALCULIX_COMPONENT_REGISTRY,
-        ),
-      },
-      onToolInputPartial: async (_params, app) => {
-        await app.navigate(
-          "status",
-          { kind: "loading" } satisfies DisplayState,
-        );
-      },
-      onToolResult: async (result, app) => {
+/** The App configuration, exposed so its projections are testable without a host. */
+export function calculixSurfaceAppOptions(
+  root: HTMLElement,
+): CalculixSurfaceAppOptions {
+  return {
+    root,
+    info: CALCULIX_APP_INFO,
+    registry: CALCULIX_COMPONENT_REGISTRY,
+    strict: true,
+    surfaceClassName: "calculix-component-surface",
+    statusClassName: CALCULIX_STATUS_CLASS,
+    loadingLabel: "Receiving a CalculiX result or recorded static result…",
+    emptyLabel: "CalculiX returned no supported result projection.",
+    fromToolResult: async (result, host) =>
+      toSurfaceState(
+        await displayStateFromToolResult(result, host.readServerResource),
+      ),
+    viewerSession: {
+      // Every `viewer.session.apply` payload addresses this whole-view App;
+      // the strict parser decides, and a rejection is shown, never dropped.
+      validate: (_value: unknown): _value is unknown => true,
+      toState: async (value) => {
         try {
-          const next = await displayStateFromToolResult(
-            result,
-            (uri) => app.ctx.app.readServerResource({ uri }),
-          );
-          await showDisplayState(app.navigate, next);
+          return toSurfaceState(await displayStateFromViewerSession(value));
         } catch (error) {
-          await app.navigate(
-            "status",
-            {
-              kind: "error",
-              message: errorMessage(error),
-            } satisfies DisplayState,
-          );
+          return {
+            kind: "error",
+            title: "Session rejected",
+            code: SESSION_REJECTED_CODE,
+            message: `Rejected ${CALCULIX_VIEWER_SESSION_SCHEMA} session: ${
+              errorMessage(error)
+            }`,
+          };
         }
       },
-      onTeardown: async () => {
-        removeHostContextListener?.();
-        removeHostContextListener = undefined;
-        currentResult = undefined;
-        disposeSessionChannel();
-        await disposeSurface();
-      },
-    });
-  } catch (error) {
-    disposeSessionChannel();
-    throw error;
-  }
-
-  const onHostContextChanged = (): void => {
-    applySurfaceContext(handle.ctx.hostContext, document.documentElement);
-    if (!currentResult || handle.currentView !== "surface") return;
-    void handle.navigate("surface", currentResult).catch(reportError);
+    },
+    onError: (error) => {
+      console.error("[mcp-calculix] Results projection failed", error);
+    },
   };
-  handle.ctx.app.addEventListener("hostcontextchanged", onHostContextChanged);
-  applySurfaceContext(handle.ctx.hostContext, document.documentElement);
-  removeHostContextListener = () => {
-    handle.ctx.app.removeEventListener(
-      "hostcontextchanged",
-      onHostContextChanged,
-    );
-  };
-
-  await sessionReceiver.activate((next) =>
-    showDisplayState(handle.navigate, next)
-  );
 }
 
-export type CalculixSurfaceResolution =
-  | { readonly ok: true; readonly surface: ComponentSurface }
-  | { readonly ok: false; readonly message: string };
-
-/** Keep the active route mounted when a host sends a malformed surface. */
-export function resolveCalculixSurface(
-  hostContext: McpViewHostContext,
-): CalculixSurfaceResolution {
-  try {
-    const surface = activeComponentSurface(
-      CALCULIX_COMPONENT_REGISTRY,
-      hostContext,
-    );
-    return surface ? { ok: true, surface } : {
-      ok: false,
-      message:
-        "This App exposes components and requires a host-selected surface.",
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      message: `The host-selected component surface is invalid: ${
-        errorMessage(error)
-      }`,
-    };
-  }
-}
-
-async function showDisplayState(
-  navigate: (name: string, args?: unknown) => Promise<void>,
-  state: DisplayState,
-): Promise<void> {
-  if (state.kind === "result") {
-    await navigate("surface", state.result);
-    return;
-  }
-  await navigate("status", state);
-}
-
-export function renderDisplayState(state: DisplayState): HTMLElement {
+/**
+ * Map a CalculiX display state onto the shared surface states. Unresolved and
+ * unavailable recorded evidence are notices, not errors: nothing failed, the
+ * ledger simply holds no result to show. `code` carries the ledger status.
+ */
+export function toSurfaceState(state: DisplayState): CalculixSurfaceState {
   switch (state.kind) {
     case "loading":
-      return renderStateMessage(
-        "Receiving a CalculiX result or recorded static result…",
-        "neutral",
-        undefined,
-        true,
-      );
     case "empty":
-      return renderStateMessage(
-        "CalculiX returned no supported result projection.",
-        "neutral",
-      );
     case "error":
-      return renderStateMessage(state.message, "danger");
-    case "unresolved":
-      return renderStateMessage(
-        state.reason ??
-          `Recorded evidence remains ${state.status}; no result was inferred.`,
-        "warning",
-        "Unresolved recorded evidence",
-      );
-    case "unavailable":
-      return renderStateMessage(
-        state.reason ??
-          `Recorded evidence is ${state.status}; no result was substituted.`,
-        "warning",
-        "Recorded evidence unavailable",
-      );
     case "result":
-      throw new TypeError(
-        "Result data must render through the component surface.",
-      );
+      return state;
+    case "unresolved":
+      return {
+        kind: "notice",
+        tone: "warning",
+        title: "Unresolved recorded evidence",
+        message: state.reason ??
+          `Recorded evidence remains ${state.status}; no result was inferred.`,
+        code: state.status,
+      };
+    case "unavailable":
+      return {
+        kind: "notice",
+        tone: "warning",
+        title: "Recorded evidence unavailable",
+        message: state.reason ??
+          `Recorded evidence is ${state.status}; no result was substituted.`,
+        code: state.status,
+      };
   }
 }
 
-/** Render the shared state primitive where the view lifecycle expects an element. */
-export function renderStateMessage(
-  detail: string,
-  tone: PresentationTone,
-  title?: string,
-  busy = false,
-): HTMLElement {
-  const host = document.createElement("div");
-  render(
-    createElement(
-      StateMessage,
-      { busy, className: "calculix-viewer-state", title, tone },
-      detail,
-    ),
-    host,
+/** The one status the App cannot render itself: its own failure to start. */
+export function renderStartupFailure(error: unknown): HTMLElement {
+  return renderStatusMessage(
+    error instanceof Error ? error.message : "The viewer could not start.",
+    {
+      className: CALCULIX_STATUS_CLASS,
+      title: "CalculiX viewer unavailable",
+      tone: "danger",
+    },
   );
-  const node = host.firstElementChild;
-  if (!node) {
-    throw new Error("The shared CalculiX state message did not render.");
-  }
-  return node as HTMLElement;
 }
 
 function errorMessage(error: unknown): string {

@@ -6,7 +6,6 @@ import {
 } from "@std/assert";
 import {
   advertisedComponentCatalog,
-  CASYS_SURFACE_CONTEXT_KEY,
   mountComponentSurface,
 } from "@casys/mcp-view-components";
 import type { PreactSurfaceContext } from "@casys/mcp-view-components/preact";
@@ -25,8 +24,11 @@ import {
 } from "./components.tsx";
 import {
   CALCULIX_APP_INFO,
-  renderDisplayState,
-  resolveCalculixSurface,
+  CALCULIX_STATUS_CLASS,
+  calculixSurfaceAppOptions,
+  renderStartupFailure,
+  SESSION_REJECTED_CODE,
+  toSurfaceState,
 } from "./app.ts";
 import {
   displayStateFromToolResult,
@@ -38,7 +40,6 @@ import {
   type StaticSolveResult,
   toolErrorMessage,
 } from "./model.ts";
-import { createBufferedSessionReceiver } from "./session-receiver.ts";
 
 const RUN_ID = "r-00000000-0000-4000-8000-000000000000";
 const RUN_URI = `casys://calculix/runs/${RUN_ID}`;
@@ -86,10 +87,6 @@ const recordedDocument = {
   constraints: result.constraints,
   metrics: result.metrics,
 } as const;
-
-const componentContext = {} as unknown as PreactSurfaceContext<
-  StaticResultsViewData
->;
 
 Deno.test("results viewer parses the closed direct static-solve v2 result", () => {
   assertEquals(parseStaticSolve(result), result);
@@ -502,51 +499,6 @@ Deno.test("legacy JSON text fallback remains available without weakening validat
   );
 });
 
-Deno.test("viewer sessions survive pre-connect delivery and component remounts in FIFO order", async () => {
-  let eventHandler: ((payload: { data: unknown }) => void) | undefined;
-  let subscribedAction: string | undefined;
-  const events = {
-    on(action: string, handler: (payload: { data: unknown }) => void) {
-      subscribedAction = action;
-      eventHandler = handler;
-      return () => {
-        eventHandler = undefined;
-      };
-    },
-  };
-  const applied: number[] = [];
-  const errors: unknown[] = [];
-  const receiver = createBufferedSessionReceiver<number>({
-    events,
-    action: VIEWER_SESSION_APPLY_ACTION,
-    async map(value) {
-      await Promise.resolve();
-      if (typeof value !== "number") throw new TypeError("not a number");
-      return value;
-    },
-    onError: (error) => errors.push(error),
-  });
-  assertEquals(subscribedAction, VIEWER_SESSION_APPLY_ACTION);
-
-  eventHandler?.({ data: 1 });
-  eventHandler?.({ data: 2 });
-  await receiver.activate(async (value) => {
-    await Promise.resolve();
-    applied.push(value);
-  });
-  // A surface remount owns no listener; later App-level actions keep flowing.
-  eventHandler?.({ data: 3 });
-  await receiver.drain();
-  assertEquals(applied, [1, 2, 3]);
-
-  eventHandler?.({ data: "invalid" });
-  await receiver.drain();
-  assertEquals(errors.length, 1);
-  receiver.dispose();
-  eventHandler?.({ data: 4 });
-  assertEquals(applied, [1, 2, 3]);
-});
-
 Deno.test("default surface is one compact static-result card", () => {
   const catalog = advertisedComponentCatalog(CALCULIX_COMPONENT_REGISTRY);
   assertEquals(
@@ -554,9 +506,10 @@ Deno.test("default surface is one compact static-result card", () => {
     [CALCULIX_COMPONENT_KEYS.staticResult],
   );
   assertEquals(catalog.defaultSurface, CALCULIX_RESULTS_SURFACE);
+  // The kit frames the surface and separates stacked components with hairlines.
   assertEquals(CALCULIX_RESULTS_SURFACE.layout, {
     type: "stack",
-    gap: "sm",
+    gap: "none",
   });
   assertEquals(CALCULIX_RESULTS_SURFACE.components, [{
     id: "static-result",
@@ -564,36 +517,97 @@ Deno.test("default surface is one compact static-result card", () => {
   }]);
 });
 
-Deno.test("a malformed host surface is recoverable by a later valid context", () => {
-  const malformed = resolveCalculixSurface({
-    [CASYS_SURFACE_CONTEXT_KEY]: {
-      instanceId: "whiteboard",
-      status: "ready",
-      source: "requested",
-      surface: {
-        layout: { type: "grid", columns: 0 },
-        components: [{
-          id: "static-result",
-          component: CALCULIX_COMPONENT_KEYS.staticResult,
-        }],
-      },
-    },
-  });
-  assertEquals(malformed.ok, false);
-  if (!malformed.ok) {
+Deno.test("the App projects tool results and recorded sessions through the model", async () => {
+  const options = calculixSurfaceAppOptions({} as HTMLElement);
+  assertEquals(options.info, CALCULIX_APP_INFO);
+  assertEquals(options.strict, true);
+  assertEquals(options.surfaceClassName, "calculix-component-surface");
+  assertEquals(options.statusClassName, CALCULIX_STATUS_CLASS);
+  const host = {
+    readServerResource: () => Promise.reject(new Error("must not read")),
+  };
+
+  assertEquals(
+    await options.fromToolResult?.({
+      content: [],
+      structuredContent: result,
+    }, host),
+    { kind: "result", result },
+  );
+  assertEquals(
+    await options.fromToolResult?.({
+      content: [{ type: "text", text: "Solver unavailable" }],
+      isError: true,
+    }, host),
+    { kind: "error", message: "Solver unavailable" },
+  );
+
+  const session = options.viewerSession;
+  if (!session) throw new Error("the App must subscribe to viewer sessions");
+  // Every payload of the whole-view action reaches the strict parser; no
+  // `onInvalid` exists because nothing is ever dropped before it.
+  assertEquals(session.validate({ schema: "nope" }), true);
+  assertEquals(session.onInvalid, undefined);
+  const rejected = await session.toState({ schema: "nope" }, host);
+  assertEquals(rejected.kind, "error");
+  if (rejected.kind === "error") {
+    assertEquals(rejected.title, "Session rejected");
+    assertEquals(rejected.code, SESSION_REJECTED_CODE);
     assertStringIncludes(
-      malformed.message,
-      "host-selected component surface is invalid",
+      rejected.message,
+      `Rejected ${CALCULIX_VIEWER_SESSION_SCHEMA} session:`,
     );
   }
-
-  assertEquals(resolveCalculixSurface({}), {
-    ok: true,
-    surface: CALCULIX_RESULTS_SURFACE,
+  const base = await digitalThreadSession();
+  const unresolvedSession = {
+    ...base,
+    basis: { ...base.basis, sessionFingerprint: `sha256:${"0".repeat(64)}` },
+    projection: { status: "unresolved", reason: "TRACE GAP" } as const,
+  };
+  unresolvedSession.basis.sessionFingerprint =
+    await calculixRecordedSessionFingerprint(unresolvedSession);
+  assertEquals(await session.toState(unresolvedSession, host), {
+    kind: "notice",
+    tone: "warning",
+    title: "Unresolved recorded evidence",
+    message: "TRACE GAP",
+    code: "unresolved",
   });
 });
 
-Deno.test("status projections use the shared busy-aware state primitive", async () => {
+Deno.test("unresolved and unavailable ledger states are warning notices carrying the ledger status", () => {
+  assertEquals(toSurfaceState({ kind: "loading" }), { kind: "loading" });
+  assertEquals(
+    toSurfaceState({ kind: "error", message: "boom" }),
+    { kind: "error", message: "boom" },
+  );
+  assertEquals(
+    toSurfaceState({ kind: "unresolved", status: "dispatched", reason: null }),
+    {
+      kind: "notice",
+      tone: "warning",
+      title: "Unresolved recorded evidence",
+      message: "Recorded evidence remains dispatched; no result was inferred.",
+      code: "dispatched",
+    },
+  );
+  assertEquals(
+    toSurfaceState({
+      kind: "unavailable",
+      status: "quarantined",
+      reason: "integrity verification failed",
+    }),
+    {
+      kind: "notice",
+      tone: "warning",
+      title: "Recorded evidence unavailable",
+      message: "integrity verification failed",
+      code: "quarantined",
+    },
+  );
+});
+
+Deno.test("a viewer that cannot start renders the shared danger state", async () => {
   const documentModule = await import("linkedom");
   const dom = documentModule.parseHTML("<html><body></body></html>");
   const previousDocument = globalThis.document;
@@ -602,23 +616,18 @@ Deno.test("status projections use the shared busy-aware state primitive", async 
     value: dom.document,
   });
   try {
-    const loading = renderDisplayState({ kind: "loading" });
-    assertEquals(loading.classList.contains("mcp-view-state"), true);
-    assertEquals(loading.getAttribute("aria-busy"), "true");
-    assertEquals(
-      loading.querySelectorAll(".mcp-view-state-busy").length,
-      1,
-    );
-
-    const unavailable = renderDisplayState({
-      kind: "unavailable",
-      status: "quarantined",
-      reason: "integrity verification failed",
-    });
-    assertEquals(unavailable.getAttribute("data-tone"), "warning");
+    const failure = renderStartupFailure(new Error("transport refused"));
+    assertEquals(failure.classList.contains("mcp-view-state"), true);
+    assertEquals(failure.classList.contains(CALCULIX_STATUS_CLASS), true);
+    assertEquals(failure.getAttribute("data-tone"), "danger");
     assertStringIncludes(
-      unavailable.textContent ?? "",
-      "Recorded evidence unavailable",
+      failure.textContent ?? "",
+      "CalculiX viewer unavailable",
+    );
+    assertStringIncludes(failure.textContent ?? "", "transport refused");
+    assertStringIncludes(
+      renderStartupFailure("not an error").textContent ?? "",
+      "The viewer could not start.",
     );
   } finally {
     Object.defineProperty(globalThis, "document", {
@@ -695,12 +704,89 @@ Deno.test({
           2,
         );
         assertEquals(root.querySelectorAll('[data-tone="success"]').length, 0);
+        // The model and its boundary conditions are facts of the sheet, not a pane.
+        assertEquals(
+          Array.from(
+            root.querySelectorAll(".mcp-view-element-section-title"),
+            (title) => title.textContent,
+          ),
+          ["Model", "Boundary conditions"],
+        );
+        const text = root.textContent ?? "";
+        assertStringIncludes(text, "SelectionFIXED · 210 nodes");
+        assertStringIncludes(text, "SelectionLOADED · 87 nodes");
+        assertEquals(
+          text.split("FIXED").length - 1,
+          2,
+          "selection, then fixed",
+        );
+        assertStringIncludes(text, "LoadLOADED · [0, 0, -500] N");
+        assertEquals(
+          root.querySelectorAll('.mcp-view-key-values[data-layout="facts"]')
+            .length,
+          2,
+          "both sections read as facts, not as an inspector dump",
+        );
         assertNoInventedVerdict(root);
 
         await mounted.dispose();
         assertEquals(root.textContent, "");
       },
     );
+  },
+});
+
+Deno.test({
+  name:
+    "a deck without fixed selections or loads has no boundary-conditions section",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    const unconstrained = {
+      ...result,
+      constraints: { fixedSelections: [], loads: [] },
+    };
+    await withMountedSurface(unconstrained, {}, (root) => {
+      assertEquals(
+        Array.from(
+          root.querySelectorAll(".mcp-view-element-section-title"),
+          (title) => title.textContent,
+        ),
+        ["Model"],
+      );
+      assertEquals(root.textContent?.includes("Boundary conditions"), false);
+    });
+  },
+});
+
+Deno.test({
+  name: "model counts and load vectors follow the host locale too",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, { locale: "en-US" }, (root) => {
+      const text = root.textContent ?? "";
+      assertStringIncludes(text, "Nodes9,669");
+      assertStringIncludes(text, "Elements5,568");
+      assertStringIncludes(text, "FIXED · 210 nodes");
+      assertStringIncludes(text, "LOADED · [0, 0, -500] N");
+    });
+    await withMountedSurface(result, { locale: "de-DE" }, (root) => {
+      const text = root.textContent ?? "";
+      assertStringIncludes(text, "Nodes9.669");
+      assertStringIncludes(text, "LOADED · [0, 0, -500] N");
+    });
+  },
+});
+
+Deno.test({
+  name: "metric values follow the host locale, not the viewing machine",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, { locale: "en-US" }, (root) => {
+      assertStringIncludes(root.textContent ?? "", "0.0428");
+    });
+    await withMountedSurface(result, { locale: "de-DE" }, (root) => {
+      assertStringIncludes(root.textContent ?? "", "0,0428");
+    });
   },
 });
 
@@ -779,7 +865,10 @@ async function withMountedSurface(
       root,
       registry: CALCULIX_COMPONENT_REGISTRY,
       data,
-      appContext: componentContext,
+      // Components read the same host context the surface was selected with.
+      appContext: { hostContext } as unknown as PreactSurfaceContext<
+        StaticResultsViewData
+      >,
       hostContext: hostContext as PreactSurfaceContext<
         StaticResultsViewData
       >["hostContext"],
