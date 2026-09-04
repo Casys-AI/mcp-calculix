@@ -7,11 +7,11 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
 ### Changed
 
 - The results viewer now boots through `startPreactSurfaceApp` from
-  `@casys/mcp-view-components@0.6.0` instead of a hand-written App lifecycle.
+  `@casys/mcp-view-components@0.7.0` instead of a hand-written App lifecycle.
   Tool results and `viewer.session.apply` sessions are projected through the
   same `model.ts` parsers as before; the shared lifecycle owns view routing,
   host surface selection and the pre-connect session buffer.
-- Removed the local `session-receiver.ts` buffer. `@casys/mcp-view@0.9.2`
+- Removed the local `session-receiver.ts` buffer. `@casys/mcp-view@0.9.3`
   delivers sessions in order and holds those received before the App activates,
   which is the guarantee the shim provided.
 - Status states render through the shared `StateMessage` primitive with the
@@ -22,8 +22,9 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
   shared `Result rejected` state; a viewer that cannot start shows
   `CalculiX viewer unavailable`. The loading state now carries the shared
   `Loading` title and `info` tone, and empty states the `Empty` title.
-- Pins the split View checkout to the `mcp-server` revision that carries
-  `@casys/mcp-view-components@0.6.0`.
+- Pins the split View checkout to `mcp-server` commit `59eeb37`, which carries
+  `@casys/mcp-view@0.9.3` and `@casys/mcp-view-components@0.7.0`. With 0.7.0 a
+  complete `tool-input`, not only a partial one, returns the App to `loading`.
 
 ## [0.8.5] - 2026-08-31
 
