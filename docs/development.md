@@ -22,7 +22,8 @@ execute a static observation smoke inside the built release image.
 ## Viewer build
 
 Viewer source builds intentionally require explicit local split packages from
-the matching `mcp-server` source revision:
+the matching `mcp-server` source revision (`b08802d`, view `0.9.3`, contracts
+`0.1.0`, components `0.9.0`):
 
 ```bash
 export MCP_VIEW_LOCAL_ROOT=/absolute/path/to/mcp-server/packages/view

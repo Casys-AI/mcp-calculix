@@ -3,6 +3,7 @@
 import {
   defineComponentRegistry,
   defineComponentSurface,
+  type Translator,
 } from "@casys/mcp-view-components";
 import {
   definePreactComponent,
@@ -10,16 +11,21 @@ import {
   type PreactSurfaceContext,
 } from "@casys/mcp-view-components/preact";
 import {
-  ElementBody,
   ElementIdent,
   ElementProvenance,
   ElementSection,
+  FocusedView,
   InlineCode,
   KeyValueList,
   MetricGrid,
-  SemanticElement,
 } from "@casys/mcp-view-components/preact/components";
 import type { ComponentChild } from "preact";
+import {
+  type CalculixMessageKey,
+  calculixMessages,
+  formatCount,
+  formatNumber,
+} from "./i18n.ts";
 import type { StaticResultsViewData } from "./model.ts";
 
 export const CALCULIX_COMPONENT_KEYS = {
@@ -30,6 +36,8 @@ type CalculixComponentProps = PreactSurfaceComponentProps<
   StaticResultsViewData
 >;
 
+type CalculixTranslator = Translator<CalculixMessageKey>;
+
 interface Fact {
   readonly id: string;
   readonly label: string;
@@ -37,62 +45,59 @@ interface Fact {
 }
 
 const StaticResult = ({ data, context }: CalculixComponentProps) => {
-  const boundary = boundaryFacts(data, context.hostContext.locale);
+  const locale = context.hostContext.locale;
+  const t = calculixMessages(locale);
+  const boundary = boundaryFacts(data, locale, t);
   return (
-    <SemanticElement
-      className="calculix-result-card"
-      reference={{
-        domain: "calculix",
-        kind: data.kind,
-        id: resultIdentity(data),
-        basisFingerprint: resultBasisFingerprint(data),
-      }}
-      density="card"
-      ident={
+    <FocusedView
+      className="calculix-result-view"
+      label={resultTitle(data, t)}
+      hostContext={context.hostContext}
+      status={
         <ElementIdent
           marker={resultBadge(data)}
-          label={resultTitle(data)}
+          label={resultTitle(data, t)}
           detail={resultEyebrow(data)}
         />
       }
-      body={
-        <ElementBody>
-          <MetricGrid
-            className="calculix-result-readings"
-            items={[
-              {
-                id: "max-displacement",
-                label: "Maximum displacement",
-                value: formatNumber(
-                  data.metrics.maxDisplacement.value,
-                  context.hostContext.locale,
-                ),
-                unit: data.metrics.maxDisplacement.unit,
-                detail: `Node ${data.metrics.maxDisplacement.nodeId}`,
-              },
-              {
-                id: "max-von-mises",
-                label: "Maximum von Mises",
-                value: formatNumber(
-                  data.metrics.maxVonMises.value,
-                  context.hostContext.locale,
-                ),
-                unit: data.metrics.maxVonMises.unit,
-                detail: `Element ${data.metrics.maxVonMises.elementId}`,
-              },
-            ]}
-          />
-          <ElementSection title="Model">
-            <Facts items={modelFacts(data, context.hostContext.locale)} />
+      primary={
+        <MetricGrid
+          className="calculix-result-readings"
+          items={[
+            {
+              id: "max-displacement",
+              label: t("maxDisplacement"),
+              value: formatNumber(
+                data.metrics.maxDisplacement.value,
+                locale,
+              ),
+              unit: data.metrics.maxDisplacement.unit,
+              detail: t("node", { id: data.metrics.maxDisplacement.nodeId }),
+            },
+            {
+              id: "max-von-mises",
+              label: t("maxVonMises"),
+              value: formatNumber(data.metrics.maxVonMises.value, locale),
+              unit: data.metrics.maxVonMises.unit,
+              detail: t("element", { id: data.metrics.maxVonMises.elementId }),
+            },
+          ]}
+        />
+      }
+      detailsLabel={t("technicalDetails")}
+      details={
+        <>
+          <ElementSection title={t("model")}>
+            <Facts items={modelFacts(data, locale, t)} />
           </ElementSection>
           {boundary.length > 0 && (
-            <ElementSection title="Boundary conditions">
+            <ElementSection title={t("boundaryConditions")}>
               <Facts items={boundary} />
             </ElementSection>
           )}
-        </ElementBody>
+          {resultProvenance(data, t)}
+        </>
       }
-      provenance={resultProvenance(data)}
     />
   );
 };
@@ -131,38 +136,28 @@ export const CALCULIX_COMPONENT_REGISTRY = defineComponentRegistry<
   defaultSurface: CALCULIX_RESULTS_SURFACE,
 });
 
-/** The host declares the locale; the viewing machine's own setting is not it. */
-function formatNumber(value: number, locale: string | undefined): string {
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: 5 }).format(
-    value,
-  );
-}
-
-function formatCount(value: number, locale: string | undefined): string {
-  return new Intl.NumberFormat(locale).format(value);
-}
-
 /** What was meshed: the whole model, then every named selection with its node count. */
 function modelFacts(
   data: StaticResultsViewData,
   locale: string | undefined,
+  t: CalculixTranslator,
 ): Fact[] {
   const { mesh } = data;
   return [
-    { id: "nodes", label: "Nodes", value: formatCount(mesh.nodes, locale) },
+    { id: "nodes", label: t("nodes"), value: formatCount(mesh.nodes, locale) },
     {
       id: "elements",
-      label: "Elements",
+      label: t("elements"),
       value: formatCount(mesh.elements, locale),
     },
     ...Object.entries(mesh.nodesPerSelection).map(([selection, nodes]) => ({
       id: `selection-${selection}`,
-      label: "Selection",
+      label: t("selection"),
       value: (
         <>
-          <InlineCode>{selection}</InlineCode> · {formatCount(nodes, locale)}
-          {" "}
-          nodes
+          <InlineCode>{selection}</InlineCode> · {t("selectionNodes", {
+            count: formatCount(nodes, locale),
+          })}
         </>
       ),
     })),
@@ -173,18 +168,19 @@ function modelFacts(
 function boundaryFacts(
   data: StaticResultsViewData,
   locale: string | undefined,
+  t: CalculixTranslator,
 ): Fact[] {
   const { constraints } = data;
   return [
     ...constraints.fixedSelections.map((selection) => ({
       id: `fixed-${selection}`,
-      label: "Fixed",
+      label: t("fixed"),
       value: <InlineCode>{selection}</InlineCode>,
     })),
     // The solver accepts repeated load selections, so the index keeps ids unique.
     ...constraints.loads.map((load, index) => ({
       id: `load-${index + 1}-${load.selection}`,
-      label: "Load",
+      label: t("load"),
       value: (
         <>
           <InlineCode>{load.selection}</InlineCode> · [
@@ -197,12 +193,13 @@ function boundaryFacts(
   ];
 }
 
-function resultTitle(data: StaticResultsViewData): string {
-  return data.kind === "digital-thread-static-proof"
-    ? "Recorded static response"
-    : data.kind === "static-solve-recorded"
-    ? "Recorded static response"
-    : "Static response";
+function resultTitle(
+  data: StaticResultsViewData,
+  t: CalculixTranslator,
+): string {
+  return data.kind === "static-solve"
+    ? t("staticResponse")
+    : t("recordedStaticResponse");
 }
 
 function resultEyebrow(data: StaticResultsViewData): string {
@@ -221,35 +218,14 @@ function resultBadge(data: StaticResultsViewData): string {
     : "Solver result";
 }
 
-function resultIdentity(data: StaticResultsViewData): string {
-  if (data.kind === "digital-thread-static-proof") {
-    return data.viewerSession.anchor.id;
-  }
-  if (data.kind === "static-solve-recorded") return data.run.runId;
-  return data.inputArtifact.sha256;
-}
-
-function resultBasisFingerprint(data: StaticResultsViewData): string {
-  if (data.kind === "digital-thread-static-proof") {
-    return data.viewerSession.anchor.fingerprint.slice("sha256:".length);
-  }
-  if (data.kind === "static-solve-recorded") {
-    const artifact = data.run.artifacts.find((item) =>
-      item.name === "result.json"
-    );
-    if (!artifact) {
-      throw new TypeError("Recorded result has no result.json identity.");
-    }
-    return artifact.sha256;
-  }
-  return data.inputArtifact.sha256;
-}
-
-function resultProvenance(data: StaticResultsViewData) {
+function resultProvenance(
+  data: StaticResultsViewData,
+  t: CalculixTranslator,
+) {
   if (data.kind === "digital-thread-static-proof") {
     return (
       <ElementProvenance
-        label="Result artifact"
+        label={t("resultArtifact")}
         value={data.viewerSession.anchor.fingerprint}
       />
     );
@@ -263,14 +239,14 @@ function resultProvenance(data: StaticResultsViewData) {
     }
     return (
       <ElementProvenance
-        label="Result artifact"
+        label={t("resultArtifact")}
         value={`sha256:${artifact.sha256}`}
       />
     );
   }
   return (
     <ElementProvenance
-      label="Input basis"
+      label={t("inputBasis")}
       value={`sha256:${data.inputArtifact.sha256}`}
     />
   );

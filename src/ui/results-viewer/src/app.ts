@@ -1,9 +1,11 @@
+import { mcpViewMessages } from "@casys/mcp-view-components";
 import {
   type PreactSurfaceAppOptions,
   renderStatusMessage,
   startPreactSurfaceApp,
   type SurfaceAppHandle,
   type SurfaceDisplayState,
+  type SurfaceLabel,
 } from "@casys/mcp-view-components/preact";
 import { installMcpViewFonts } from "@casys/mcp-view-components/fonts";
 import {
@@ -11,6 +13,7 @@ import {
   CALCULIX_VIEWER_SESSION_SCHEMA,
 } from "../../../viewer-session.ts";
 import { CALCULIX_COMPONENT_REGISTRY } from "./components.tsx";
+import { calculixMessages } from "./i18n.ts";
 import {
   type DisplayState,
   displayStateFromToolResult,
@@ -63,8 +66,10 @@ export function calculixSurfaceAppOptions(
     strict: true,
     surfaceClassName: "calculix-component-surface",
     statusClassName: CALCULIX_STATUS_CLASS,
-    loadingLabel: "Receiving a CalculiX result or recorded static result…",
-    emptyLabel: "CalculiX returned no supported result projection.",
+    themeUpdates: "in-place",
+    documentLanguage: calculixMessages.locale,
+    loadingLabel: (locale) => calculixMessages(locale)("loading"),
+    emptyLabel: (locale) => calculixMessages(locale)("empty"),
     fromToolResult: async (result, host) =>
       toSurfaceState(
         await displayStateFromToolResult(result, host.readServerResource),
@@ -77,13 +82,16 @@ export function calculixSurfaceAppOptions(
         try {
           return toSurfaceState(await displayStateFromViewerSession(value));
         } catch (error) {
+          const diagnostic = errorMessage(error);
           return {
             kind: "error",
-            title: "Session rejected",
+            title: sessionRejectedTitle,
             code: SESSION_REJECTED_CODE,
-            message: `Rejected ${CALCULIX_VIEWER_SESSION_SCHEMA} session: ${
-              errorMessage(error)
-            }`,
+            message: (locale) =>
+              calculixMessages(locale)("sessionRejectedMessage", {
+                schema: CALCULIX_VIEWER_SESSION_SCHEMA,
+                error: diagnostic,
+              }),
           };
         }
       },
@@ -98,6 +106,8 @@ export function calculixSurfaceAppOptions(
  * Map a CalculiX display state onto the shared surface states. Unresolved and
  * unavailable recorded evidence are notices, not errors: nothing failed, the
  * ledger simply holds no result to show. `code` carries the ledger status.
+ * Interface titles and fallbacks are SurfaceLabel callbacks, resolved when the
+ * status renders; raw `reason` stays literal.
  */
 export function toSurfaceState(state: DisplayState): CalculixSurfaceState {
   switch (state.kind) {
@@ -110,30 +120,48 @@ export function toSurfaceState(state: DisplayState): CalculixSurfaceState {
       return {
         kind: "notice",
         tone: "warning",
-        title: "Unresolved recorded evidence",
-        message: state.reason ??
-          `Recorded evidence remains ${state.status}; no result was inferred.`,
+        title: unresolvedTitle,
+        message: state.reason ?? unresolvedFallback(state.status),
         code: state.status,
       };
     case "unavailable":
       return {
         kind: "notice",
         tone: "warning",
-        title: "Recorded evidence unavailable",
-        message: state.reason ??
-          `Recorded evidence is ${state.status}; no result was substituted.`,
+        title: unavailableTitle,
+        message: state.reason ?? unavailableFallback(state.status),
         code: state.status,
       };
   }
 }
 
+const unresolvedTitle: SurfaceLabel = (locale) =>
+  calculixMessages(locale)("unresolvedEvidence");
+const unavailableTitle: SurfaceLabel = (locale) =>
+  calculixMessages(locale)("unavailableEvidence");
+const sessionRejectedTitle: SurfaceLabel = (locale) =>
+  mcpViewMessages(locale)("sessionRejectedTitle");
+
+function unresolvedFallback(status: string): SurfaceLabel {
+  return (locale) => calculixMessages(locale)("unresolvedFallback", { status });
+}
+
+function unavailableFallback(status: string): SurfaceLabel {
+  return (locale) =>
+    calculixMessages(locale)("unavailableFallback", { status });
+}
+
 /** The one status the App cannot render itself: its own failure to start. */
-export function renderStartupFailure(error: unknown): HTMLElement {
+export function renderStartupFailure(
+  error: unknown,
+  locale?: string,
+): HTMLElement {
+  const t = calculixMessages(locale);
   return renderStatusMessage(
-    error instanceof Error ? error.message : "The viewer could not start.",
+    error instanceof Error ? error.message : t("viewerCouldNotStart"),
     {
       className: CALCULIX_STATUS_CLASS,
-      title: "CalculiX viewer unavailable",
+      title: t("viewerUnavailable"),
       tone: "danger",
     },
   );

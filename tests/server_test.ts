@@ -91,7 +91,7 @@ Deno.test("CalculiX serves stateless tool and results-viewer resource contracts"
     assertEquals(discovered.body.result.resultType, "complete");
     assertEquals(discovered.body.result.serverInfo, {
       name: "mcp-calculix",
-      version: "0.8.5",
+      version: "0.8.6",
     });
 
     const listed = await rpc(url, "tools/list");

@@ -30,6 +30,7 @@ import {
   SESSION_REJECTED_CODE,
   toSurfaceState,
 } from "./app.ts";
+import { calculixMessages, formatCount, formatNumber } from "./i18n.ts";
 import {
   displayStateFromToolResult,
   displayStateFromViewerSession,
@@ -523,6 +524,26 @@ Deno.test("the App projects tool results and recorded sessions through the model
   assertEquals(options.strict, true);
   assertEquals(options.surfaceClassName, "calculix-component-surface");
   assertEquals(options.statusClassName, CALCULIX_STATUS_CLASS);
+  assertEquals(options.themeUpdates, "in-place");
+  assertEquals(options.documentLanguage, calculixMessages.locale);
+  assertEquals(typeof options.loadingLabel, "function");
+  assertEquals(typeof options.emptyLabel, "function");
+  if (typeof options.loadingLabel === "function") {
+    assertEquals(
+      options.loadingLabel("en"),
+      "Receiving a CalculiX result or recorded static result…",
+    );
+    assertEquals(
+      options.loadingLabel("fr"),
+      "Réception d'un résultat CalculiX ou d'un résultat statique enregistré…",
+    );
+  }
+  if (typeof options.emptyLabel === "function") {
+    assertEquals(
+      options.emptyLabel("fr"),
+      "CalculiX n'a renvoyé aucune projection de résultat prise en charge.",
+    );
+  }
   const host = {
     readServerResource: () => Promise.reject(new Error("must not read")),
   };
@@ -548,15 +569,28 @@ Deno.test("the App projects tool results and recorded sessions through the model
   // `onInvalid` exists because nothing is ever dropped before it.
   assertEquals(session.validate({ schema: "nope" }), true);
   assertEquals(session.onInvalid, undefined);
-  const rejected = await session.toState({ schema: "nope" }, host);
+  const rejected = await session.toState({ schema: "nope" }, {
+    ...host,
+    locale: "fr",
+  });
   assertEquals(rejected.kind, "error");
   if (rejected.kind === "error") {
-    assertEquals(rejected.title, "Session rejected");
+    assertEquals(typeof rejected.title, "function");
+    assertEquals(resolvedLabel(rejected.title), "Session rejected");
+    assertEquals(resolvedLabel(rejected.title, "fr"), "Session rejetée");
     assertEquals(rejected.code, SESSION_REJECTED_CODE);
+    assertEquals(typeof rejected.message, "function");
+    const englishMessage = resolvedLabel(rejected.message);
+    const frenchMessage = resolvedLabel(rejected.message, "fr");
+    const wrapper = `Rejected ${CALCULIX_VIEWER_SESSION_SCHEMA} session: `;
+    assertEquals(englishMessage.startsWith(wrapper), true);
+    const diagnostic = englishMessage.slice(wrapper.length);
+    assertEquals(diagnostic.length > 0, true);
     assertStringIncludes(
-      rejected.message,
-      `Rejected ${CALCULIX_VIEWER_SESSION_SCHEMA} session:`,
+      frenchMessage,
+      `Session ${CALCULIX_VIEWER_SESSION_SCHEMA} rejetée :`,
     );
+    assertStringIncludes(frenchMessage, diagnostic);
   }
   const base = await digitalThreadSession();
   const unresolvedSession = {
@@ -566,13 +600,25 @@ Deno.test("the App projects tool results and recorded sessions through the model
   };
   unresolvedSession.basis.sessionFingerprint =
     await calculixRecordedSessionFingerprint(unresolvedSession);
-  assertEquals(await session.toState(unresolvedSession, host), {
-    kind: "notice",
-    tone: "warning",
-    title: "Unresolved recorded evidence",
-    message: "TRACE GAP",
-    code: "unresolved",
+  const unresolved = await session.toState(unresolvedSession, {
+    ...host,
+    locale: "fr",
   });
+  assertEquals(unresolved.kind, "notice");
+  if (unresolved.kind === "notice") {
+    assertEquals(unresolved.tone, "warning");
+    assertEquals(typeof unresolved.title, "function");
+    assertEquals(
+      resolvedLabel(unresolved.title),
+      "Unresolved recorded evidence",
+    );
+    assertEquals(
+      resolvedLabel(unresolved.title, "fr"),
+      "Preuve enregistrée non résolue",
+    );
+    assertEquals(unresolved.message, "TRACE GAP");
+    assertEquals(unresolved.code, "unresolved");
+  }
 });
 
 Deno.test("unresolved and unavailable ledger states are warning notices carrying the ledger status", () => {
@@ -581,30 +627,54 @@ Deno.test("unresolved and unavailable ledger states are warning notices carrying
     toSurfaceState({ kind: "error", message: "boom" }),
     { kind: "error", message: "boom" },
   );
-  assertEquals(
-    toSurfaceState({ kind: "unresolved", status: "dispatched", reason: null }),
-    {
-      kind: "notice",
-      tone: "warning",
-      title: "Unresolved recorded evidence",
-      message: "Recorded evidence remains dispatched; no result was inferred.",
-      code: "dispatched",
-    },
-  );
-  assertEquals(
-    toSurfaceState({
-      kind: "unavailable",
-      status: "quarantined",
-      reason: "integrity verification failed",
-    }),
-    {
-      kind: "notice",
-      tone: "warning",
-      title: "Recorded evidence unavailable",
-      message: "integrity verification failed",
-      code: "quarantined",
-    },
-  );
+  const unresolved = toSurfaceState({
+    kind: "unresolved",
+    status: "dispatched",
+    reason: null,
+  });
+  assertEquals(unresolved.kind, "notice");
+  if (unresolved.kind === "notice") {
+    assertEquals(unresolved.tone, "warning");
+    assertEquals(typeof unresolved.title, "function");
+    assertEquals(
+      resolvedLabel(unresolved.title),
+      "Unresolved recorded evidence",
+    );
+    assertEquals(
+      resolvedLabel(unresolved.title, "fr"),
+      "Preuve enregistrée non résolue",
+    );
+    assertEquals(typeof unresolved.message, "function");
+    assertEquals(
+      resolvedLabel(unresolved.message),
+      "Recorded evidence remains dispatched; no result was inferred.",
+    );
+    assertEquals(
+      resolvedLabel(unresolved.message, "fr"),
+      "La preuve enregistrée reste dispatched ; aucun résultat n'a été inféré.",
+    );
+    assertEquals(unresolved.code, "dispatched");
+  }
+  const unavailable = toSurfaceState({
+    kind: "unavailable",
+    status: "quarantined",
+    reason: "integrity verification failed",
+  });
+  assertEquals(unavailable.kind, "notice");
+  if (unavailable.kind === "notice") {
+    assertEquals(unavailable.tone, "warning");
+    assertEquals(typeof unavailable.title, "function");
+    assertEquals(
+      resolvedLabel(unavailable.title),
+      "Recorded evidence unavailable",
+    );
+    assertEquals(
+      resolvedLabel(unavailable.title, "fr"),
+      "Preuve enregistrée indisponible",
+    );
+    assertEquals(unavailable.message, "integrity verification failed");
+    assertEquals(unavailable.code, "quarantined");
+  }
 });
 
 Deno.test("a viewer that cannot start renders the shared danger state", async () => {
@@ -629,6 +699,14 @@ Deno.test("a viewer that cannot start renders the shared danger state", async ()
       renderStartupFailure("not an error").textContent ?? "",
       "The viewer could not start.",
     );
+    assertStringIncludes(
+      renderStartupFailure("not an error", "fr").textContent ?? "",
+      "Visualiseur CalculiX indisponible",
+    );
+    assertStringIncludes(
+      renderStartupFailure("not an error", "fr").textContent ?? "",
+      "Le visualiseur n'a pas pu démarrer.",
+    );
   } finally {
     Object.defineProperty(globalThis, "document", {
       configurable: true,
@@ -641,14 +719,18 @@ Deno.test("compact default source does not import invented verdict or bound widg
   const source = await Deno.readTextFile(
     new URL("./components.tsx", import.meta.url),
   );
+  assertEquals(source.includes("FocusedView"), true);
+  assertEquals(source.includes("SemanticElement"), false);
   assertEquals(source.includes("LimitGauge"), false);
   assertEquals(source.includes("ElementVerdict"), false);
   assertEquals(source.includes("ArtifactRow"), false);
   assertEquals(source.includes("PathBar"), false);
+  assertEquals(source.includes("Slot3D"), false);
 });
 
 Deno.test({
-  name: "CalculiX default surface is one documentary SemanticElement card",
+  name:
+    "CalculiX default surface is one FocusedView with extrema in primary and facts closed",
   permissions: { read: true, env: true, run: true },
   async fn() {
     await withMountedSurface(
@@ -662,14 +744,13 @@ Deno.test({
           ),
           CALCULIX_COMPONENT_KEYS.staticResult,
         );
-        const card = root.querySelector(".mcp-view-semantic-element");
-        assertEquals(card?.getAttribute("data-density"), "card");
-        assertEquals(card?.getAttribute("data-semantic-domain"), "calculix");
+        const view = root.querySelector(".mcp-view-focused-view");
+        assertEquals(view?.getAttribute("role"), "group");
         assertEquals(
-          card?.getAttribute("data-semantic-kind"),
-          "digital-thread-static-proof",
+          view?.getAttribute("aria-label"),
+          "Recorded static response",
         );
-        assertEquals(card?.hasAttribute("data-tone"), false);
+        assertEquals(root.querySelector(".mcp-view-semantic-element"), null);
         assertEquals(
           root.querySelector("[data-element-slot=verdict]"),
           null,
@@ -679,39 +760,48 @@ Deno.test({
           root.querySelector(".mcp-view-artifact-row-verification"),
           null,
         );
+        const status = root.querySelector(".mcp-view-focused-status");
+        assertStringIncludes(status?.textContent ?? "", "Documentary");
         assertStringIncludes(
-          root.textContent ?? "",
+          status?.textContent ?? "",
+          "Recorded static response",
+        );
+        assertStringIncludes(
+          status?.textContent ?? "",
           "Digital Thread · documentary projection",
         );
-        assertStringIncludes(root.textContent ?? "", "Documentary");
         assertEquals(
-          card?.getAttribute("data-semantic-id"),
-          (await digitalThreadSession()).anchor.id,
+          root.querySelectorAll(
+            ".mcp-view-focused-primary .calculix-result-readings .mcp-view-metric",
+          ).length,
+          2,
+        );
+        const details = root.querySelector("details");
+        assertEquals(details?.hasAttribute("open"), false);
+        assertEquals(
+          details?.querySelector(".mcp-view-disclosure-summary")?.textContent,
+          "Technical details",
+        );
+        assertEquals(details?.querySelector(".mcp-view-metric"), null);
+        assertEquals(details?.querySelector(".mcp-view-focused-status"), null);
+        assertEquals(
+          Array.from(
+            details?.querySelectorAll(".mcp-view-element-section-title") ?? [],
+            (title) => title.textContent,
+          ),
+          ["Model", "Boundary conditions"],
         );
         assertEquals(
-          card?.getAttribute("data-basis-fingerprint"),
-          (await digitalThreadSession()).anchor.fingerprint.slice(
-            "sha256:".length,
-          ),
+          details?.querySelector("[data-element-slot=provenance]")
+            ?.textContent
+            ?.includes((await digitalThreadSession()).anchor.fingerprint),
+          true,
         );
         assertEquals(root.textContent?.includes("CalculiX run ID"), false);
         assertEquals(root.textContent?.includes("Mesh summary"), false);
         assertEquals(root.textContent?.includes("STEP resource"), false);
         assertEquals(root.querySelector(".mcp-view-artifact-row"), null);
-        assertEquals(
-          root.querySelectorAll(".calculix-result-readings .mcp-view-metric")
-            .length,
-          2,
-        );
         assertEquals(root.querySelectorAll('[data-tone="success"]').length, 0);
-        // The model and its boundary conditions are facts of the sheet, not a pane.
-        assertEquals(
-          Array.from(
-            root.querySelectorAll(".mcp-view-element-section-title"),
-            (title) => title.textContent,
-          ),
-          ["Model", "Boundary conditions"],
-        );
         const text = root.textContent ?? "";
         assertStringIncludes(text, "SelectionFIXED · 210 nodes");
         assertStringIncludes(text, "SelectionLOADED · 87 nodes");
@@ -722,7 +812,7 @@ Deno.test({
         );
         assertStringIncludes(text, "LoadLOADED · [0, 0, -500] N");
         assertEquals(
-          root.querySelectorAll('.mcp-view-key-values[data-layout="facts"]')
+          details?.querySelectorAll('.mcp-view-key-values[data-layout="facts"]')
             .length,
           2,
           "both sections read as facts, not as an inspector dump",
@@ -788,6 +878,52 @@ Deno.test({
       assertStringIncludes(root.textContent ?? "", "0,0428");
     });
   },
+});
+
+Deno.test({
+  name:
+    "interface labels follow the host locale while statuses and identifiers stay exact",
+  permissions: { read: true, env: true, run: true },
+  async fn() {
+    await withMountedSurface(result, { locale: "fr-CA" }, (root) => {
+      const text = root.textContent ?? "";
+      assertStringIncludes(text, "Réponse statique");
+      assertStringIncludes(text, "Déplacement maximal");
+      assertStringIncludes(text, "von Mises maximal");
+      assertStringIncludes(text, "Nœud 26");
+      assertStringIncludes(text, "Élément 5229");
+      assertStringIncludes(text, "Nœuds");
+      assertStringIncludes(text, "Modèle");
+      assertStringIncludes(text, "Conditions aux limites");
+      assertStringIncludes(text, "Détails techniques");
+      assertStringIncludes(text, "Fixe");
+      assertStringIncludes(text, "Charge");
+      assertStringIncludes(text, "Solver result");
+      assertStringIncludes(text, "Static solve");
+      assertStringIncludes(text, "FIXED");
+      assertStringIncludes(text, "LOADED");
+      assertStringIncludes(text, "mm");
+      assertStringIncludes(text, "MPa");
+      assertStringIncludes(text, "] N");
+      assertEquals(text.includes("Maximum displacement"), false);
+      assertEquals(text.includes("Boundary conditions"), false);
+      assertEquals(text.includes("Technical details"), false);
+    });
+  },
+});
+
+Deno.test("absent or invalid locales fall back to English formatting", () => {
+  assertEquals(formatNumber(9669.0428, "en-US"), "9,669.0428");
+  assertEquals(formatCount(9669, "de-DE"), "9.669");
+  assertEquals(formatNumber(0.0428, "not a locale"), "0.0428");
+  assertEquals(formatCount(9669, ""), "9,669");
+  assertEquals(formatCount(9669), "9,669");
+  assertEquals(calculixMessages("not a locale")("model"), "Model");
+  assertEquals(calculixMessages("fr-CA")("model"), "Modèle");
+  assertEquals(calculixMessages.locale("fr-CA"), "fr");
+  assertEquals(calculixMessages.locale("en-GB"), "en");
+  assertEquals(calculixMessages.locale("not a locale"), "en");
+  assertEquals(calculixMessages.locale(), "en");
 });
 
 Deno.test({
@@ -884,6 +1020,14 @@ async function withMountedSurface(
       value: previousDocument,
     });
   }
+}
+
+function resolvedLabel(
+  value: string | ((locale?: string) => string) | undefined,
+  locale?: string,
+): string {
+  if (value === undefined) throw new Error("expected a surface label");
+  return typeof value === "function" ? value(locale) : value;
 }
 
 function assertNoInventedVerdict(root: HTMLElement): void {

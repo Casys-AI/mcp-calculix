@@ -16,7 +16,7 @@ import {
   CALCULIX_VIEW_APP_MANIFEST_URI,
 } from "./src/viewer-session.ts";
 
-const VERSION = "0.8.5";
+const VERSION = "0.8.6";
 const DEFAULT_PORT = 3015;
 const DEFAULT_HOSTNAME = "127.0.0.1";
 

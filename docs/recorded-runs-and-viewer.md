@@ -78,7 +78,7 @@ The server publishes:
 
 - whole-view resource: `ui://mcp-calculix/results-viewer`;
 - serialized App manifest: `ui://mcp-calculix/app-manifest`;
-- App identity: `io.casys.mcp-calculix.results@0.8.5`;
+- App identity: `io.casys.mcp-calculix.results@0.8.6`;
 - accepted read-only action: `viewer.session.apply`;
 - recorded session schema:
   `io.casys.mcp-calculix.recorded-static-proof-session/1.0`.
@@ -89,12 +89,13 @@ results. For a completed run lookup, it reads the exact `result.json`, verifies
 URI, MIME type, byte count, and SHA-256 against the complete ledger, and only
 then projects the observations. It never invokes a solve operation.
 
-The default view is exactly one `calculix.static-result` semantic component. It
-shows the result identity, maximum displacement, maximum von Mises stress, their
-node or element IDs, then the model and boundary-condition facts the deck stated
-(node and element counts, named selections, fixed selections, load vectors), and
-compact result provenance. It does not wrap STEP or detailed-extrema data into
-an application dashboard.
+The default view is exactly one `calculix.static-result` component on the kit
+`FocusedView`. Literal result status and the readable title stay outside; the
+two extrema (maximum displacement and maximum von Mises, with their node or
+element IDs) occupy primary; the model and boundary-condition facts the deck
+stated (node and element counts, named selections, fixed selections, load
+vectors) and compact result provenance sit in a native closed disclosure. It
+does not wrap STEP or detailed-extrema data into an application dashboard.
 
 ## TPS03 visual evidence
 

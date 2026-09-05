@@ -18,6 +18,8 @@ const REQUIRED_ROOTS = [
       "@casys/mcp-view-components": "mod.ts",
       "@casys/mcp-view-components/preact": "preact.ts",
       "@casys/mcp-view-components/preact/components": "preact-components.ts",
+      "@casys/mcp-view-components/surface": "surface.ts",
+      "@casys/mcp-view-components/layout": "layout.ts",
       "@casys/mcp-view-components/fonts": "fonts.ts",
     },
   },
@@ -79,6 +81,7 @@ export async function auditedViewerDenoConfig(): Promise<unknown> {
       "@std/path": "jsr:@std/path@^1.1.0",
       "linkedom": "npm:linkedom@0.18.12",
       "preact": "npm:preact@^10.28.3",
+      "preact/hooks": "npm:preact@^10.28.3/hooks",
       "preact/jsx-runtime": "npm:preact@^10.28.3/jsx-runtime",
     },
   };

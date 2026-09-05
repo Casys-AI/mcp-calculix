@@ -34,7 +34,7 @@ export interface CalculixViewAppManifest {
   readonly app: {
     readonly id: "io.casys.mcp-calculix.results";
     readonly title: "CalculiX Static Results";
-    readonly version: "0.8.5";
+    readonly version: "0.8.6";
   };
   readonly resources: readonly [{
     readonly uri: typeof CALCULIX_RESULTS_VIEWER_URI;
@@ -84,7 +84,7 @@ function parseCalculixViewAppManifest(
   );
   literal(
     app.version,
-    "0.8.5",
+    "0.8.6",
     "CalculiX View App manifest.app.version",
   );
   const resources = denseArray(
@@ -161,7 +161,7 @@ function parseCalculixViewAppManifest(
     app: {
       id: "io.casys.mcp-calculix.results",
       title: "CalculiX Static Results",
-      version: "0.8.5",
+      version: "0.8.6",
     },
     resources: [{
       uri: CALCULIX_RESULTS_VIEWER_URI,

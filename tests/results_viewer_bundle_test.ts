@@ -93,7 +93,8 @@ Deno.test("built CalculiX viewer contains its App-owned whole view", async () =>
   assertEquals(html.includes("calculix.mesh-summary"), false);
   assertEquals(html.includes("calculix.constraints"), false);
   assertEquals(html.includes("calculix.displacement-details"), false);
-  assert(html.includes("mcp-view-semantic-element"));
+  assert(html.includes("mcp-view-focused-view"));
+  assert(html.includes("mcp-view-disclosure"));
   assert(html.includes("viewer.session.apply"));
   assert(html.includes("io.casys.mcp-calculix.results"));
   assert(html.includes("whole-view"));

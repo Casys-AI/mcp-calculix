@@ -1,6 +1,6 @@
 {
   "name": "@casys/mcp-calculix",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": ["jsr:@casys/mcp-server", "jsr:@casys/mcp-view-contracts"]

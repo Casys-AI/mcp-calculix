@@ -20,7 +20,7 @@ STEP bytes -> SHA-256 snapshot -> Gmsh mesh -> generated CalculiX deck
 reports two observations and their result-artifact identity, never an
 engineering verdict.</sub>
 
-Source version `0.8.5` adds an exact serialized App contract, strict joins for
+Source version `0.8.6` adds an exact serialized App contract, strict joins for
 recorded viewer sessions, and a single responsive result component. The server
 is deliberately not a generic CalculiX shell: callers provide STEP geometry and
 reviewed physical values, not arbitrary decks, commands, executables, or flags.
@@ -106,9 +106,9 @@ Container calls must use paths visible inside the container, such as
 
 The server serves its whole-view resource at `ui://mcp-calculix/results-viewer`
 and its machine-readable App manifest at `ui://mcp-calculix/app-manifest`. The
-viewer is one semantic `calculix.static-result` component: result identity,
-maximum displacement, maximum von Mises stress, and compact provenance. It never
-calls a solve.
+viewer is one `calculix.static-result` component on the kit `FocusedView`:
+literal result status and title, the two extrema, and model / boundary /
+provenance facts behind a closed disclosure. It never calls a solve.
 
 Recorded static runs retain the exact STEP snapshot, request, Gmsh program and
 mesh, generated deck, native diagnostics, DAT output, and normalized result.

@@ -2,12 +2,12 @@
 
 All notable changes to `@casys/mcp-calculix` will be documented in this file.
 
-## [Unreleased]
+## [0.8.6] - 2026-09-05
 
 ### Changed
 
 - The results viewer now boots through `startPreactSurfaceApp` from
-  `@casys/mcp-view-components@0.7.0` instead of a hand-written App lifecycle.
+  `@casys/mcp-view-components@0.9.0` instead of a hand-written App lifecycle.
   Tool results and `viewer.session.apply` sessions are projected through the
   same `model.ts` parsers as before; the shared lifecycle owns view routing,
   host surface selection and the pre-connect session buffer.
@@ -22,9 +22,27 @@ All notable changes to `@casys/mcp-calculix` will be documented in this file.
   shared `Result rejected` state; a viewer that cannot start shows
   `CalculiX viewer unavailable`. The loading state now carries the shared
   `Loading` title and `info` tone, and empty states the `Empty` title.
-- Pins the split View checkout to `mcp-server` commit `59eeb37`, which carries
-  `@casys/mcp-view@0.9.3` and `@casys/mcp-view-components@0.7.0`. With 0.7.0 a
-  complete `tool-input`, not only a partial one, returns the App to `loading`.
+- Unresolved and unavailable notice titles and fallbacks, and the caught
+  session-rejection title and wrapper, are kit `SurfaceLabel` callbacks resolved
+  when the status renders. A host locale change does not re-run result or
+  session projection I/O. Raw `reason`, `error.message` and status codes stay
+  literal.
+- The standalone `calculix.static-result` component now uses the kit
+  `FocusedView`: literal result status and readable title stay outside, the two
+  displacement and von Mises extrema occupy primary, and exact model, boundary-
+  condition and provenance facts sit in a native closed disclosure. Interface
+  labels, loading/empty copy and notice headings follow the host locale through
+  provider English/French dictionaries on `createTranslator` (English is the
+  default and reference). Kit `SurfaceLabel` / messages own the common lifecycle
+  headings. Diagnostics, statuses, identifiers, protocol strings and scientific
+  values stay exact. Number formatting uses a valid host locale with a safe
+  English fallback. Theme-only host updates opt into `themeUpdates: "in-place"`
+  so disclosure state is kept.
+- Pins the split View checkout to `mcp-server` commit `b08802d`, which carries
+  `@casys/mcp-view@0.9.3`, `@casys/mcp-view-contracts@0.1.0` and
+  `@casys/mcp-view-components@0.9.0`. This is a viewer-kit pin, not a live
+  project adoption of that revision and not a registry publication of those
+  packages.
 
 ## [0.8.5] - 2026-08-31
 
